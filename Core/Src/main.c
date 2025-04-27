@@ -180,11 +180,9 @@ int main(void)
   /* USER CODE BEGIN 2 */
   //HAL_TIM_Base_Start_IT(&htim6);
   lcd_init();
-  HAL_TIM_Base_Init(&htim3);
+  HAL_TIM_Base_Start(&htim3);
   HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc_buffer, SAMPLE_SIZE);
 
-  lcd_show_string(30,  50, 200, 16, 16, "STM32", RED);
-  lcd_show_string(30,  70, 200, 16, 16, "Filter Output", RED);
   lcd_show_string(30, 90, 50, 16, 16, "1K: ", RED);
   lcd_show_string(30, 110, 50, 16, 16, "2K: ", RED);
   lcd_show_string(30, 130, 50, 16, 16, "5K: ", RED);
@@ -197,6 +195,13 @@ int main(void)
   while (1)
   {
 	  if(AdcConvEnd == 1) {
+		  HAL_GPIO_TogglePin(LED_B_GPIO_Port, LED_B_Pin);
+
+		  lcd_clear(WHITE);
+		  lcd_show_string(30, 90, 50, 16, 16, "1K: ", RED);
+		  lcd_show_string(30, 110, 50, 16, 16, "2K: ", RED);
+		  lcd_show_string(30, 130, 50, 16, 16, "5K: ", RED);
+
 		  //滤波
 		  arm_biquad_cascade_df1_f32(&S_1k, (float32_t*)adc_buffer, output_1k, SAMPLE_SIZE);
 		  arm_biquad_cascade_df1_f32(&S_2k, (float32_t*)adc_buffer, output_2k, SAMPLE_SIZE);
