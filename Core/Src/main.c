@@ -27,8 +27,9 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "../../Drivers/BSP/LCD/lcd.h"
 #include "arm_math.h"
-#include "lcd.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -54,6 +55,7 @@ void filter_test();
 
 /* USER CODE BEGIN PV */
 uint16_t adc_buffer[SAMPLE_SIZE];	//ADC采样数据缓冲区
+float32_t adc_float32[SAMPLE_SIZE];	//ADC采样数据浮点型
 
 float32_t output_1k[SAMPLE_SIZE];		//1k滤波输出
 float32_t output_2k[SAMPLE_SIZE];		//2k滤波输出
@@ -173,7 +175,6 @@ int main(void)
   MX_GPIO_Init();
   MX_DMA_Init();
   MX_ADC1_Init();
-  MX_TIM6_Init();
   MX_FSMC_Init();
   MX_USART1_UART_Init();
   MX_TIM3_Init();
@@ -181,7 +182,7 @@ int main(void)
   //HAL_TIM_Base_Start_IT(&htim6);
   lcd_init();
   HAL_TIM_Base_Start(&htim3);
-  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc_buffer, SAMPLE_SIZE);
+
 
   lcd_show_string(30, 90, 50, 16, 16, "1K: ", RED);
   lcd_show_string(30, 110, 50, 16, 16, "2K: ", RED);
@@ -194,7 +195,10 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  if(AdcConvEnd == 1) {
+	  	  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc_buffer, SAMPLE_SIZE);
+	  	  while(!AdcConvEnd)
+	  	    ;
+	  	  AdcConvEnd = 0;
 		  HAL_GPIO_TogglePin(LED_B_GPIO_Port, LED_B_Pin);
 
 		  lcd_clear(WHITE);
@@ -202,10 +206,14 @@ int main(void)
 		  lcd_show_string(30, 110, 50, 16, 16, "2K: ", RED);
 		  lcd_show_string(30, 130, 50, 16, 16, "5K: ", RED);
 
+		  //adc uint16_t到float32_t的转换
+		  for(int i = 0; i < 1024; i++){
+			  adc_float32[i] = (float)adc_buffer[i];
+		  }
 		  //滤波
-		  arm_biquad_cascade_df1_f32(&S_1k, (float32_t*)adc_buffer, output_1k, SAMPLE_SIZE);
-		  arm_biquad_cascade_df1_f32(&S_2k, (float32_t*)adc_buffer, output_2k, SAMPLE_SIZE);
-		  arm_biquad_cascade_df1_f32(&S_5k, (float32_t*)adc_buffer, output_5k, SAMPLE_SIZE);
+		  arm_biquad_cascade_df1_f32(&S_1k, (float32_t*)adc_float32, output_1k, SAMPLE_SIZE);
+		  arm_biquad_cascade_df1_f32(&S_2k, (float32_t*)adc_float32, output_2k, SAMPLE_SIZE);
+		  arm_biquad_cascade_df1_f32(&S_5k, (float32_t*)adc_float32, output_5k, SAMPLE_SIZE);
 
 		  //作fft变换求频率和幅值
 		  fft_process(output_1k, &mag1, &freq1);
@@ -213,21 +221,35 @@ int main(void)
 		  fft_process(output_5k, &mag5, &freq5);
 
 		  //显示滤波结果
-		  char str_1k[50];
-		  char str_2k[50];
-		  char str_5k[50];
+		  char str_1k[20];
+		  char str_2k[20];
+		  char str_5k[20];
 
-		  sprintf(str_1k, "%.3f V   %.3f Hz", mag1, freq1);
-		  sprintf(str_2k, "%.3f V   %.3f Hz", mag2, freq2);
-		  sprintf(str_5k, "%.3f V   %.3f Hz", mag5, freq5);
+		  sprintf(str_1k, "%5.3f V   %5.1f Hz", mag1, freq1);
+		  sprintf(str_2k, "%5.3f V   %5.1f Hz", mag2, freq2);
+		  sprintf(str_5k, "%5.3f V   %5.1f Hz", mag5, freq5);
 
 		  lcd_show_string(80, 90, 200, 16, 16, str_1k, BLUE);
 		  lcd_show_string(80, 110, 200, 16, 16, str_2k, BLUE);
 		  lcd_show_string(80, 130, 200, 16, 16, str_5k, BLUE);
 
-		  AdcConvEnd = 0;
+		  lcd_show_string(80, 90, 50, 16, 16, "", RED);
+
+		  for(int i = 0; i < 1024; i++){
+			  //lcd_show_num(120, 150, output_1k[i], 4, 16, RED);
+			  //float32_t* float_num = (float32_t*)adc_float32;
+			  uint32_t adc_x = *(output_1k + i);
+
+			  lcd_show_xnum(80, 150, adc_x, 4, 16, 0, RED);
+			  //lcd_show_xnum(96, 90, temp, 3, 16, 0, RED);
+			  HAL_Delay(100);
+		  }
+
+
+
+
 		  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc_buffer, SAMPLE_SIZE);
-	  }
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -302,7 +324,7 @@ void fft_process(float32_t* fft_in, float32_t* mag, float32_t* freq) {
 			maxIndex = i;
 		}
 	}
-	*mag = (maxValue * 2.0 / SAMPLE_SIZE) * 3.3f / 4096.f;
+	*mag = (maxValue * 2.0 / SAMPLE_SIZE) * 3.3f / 4096.0f;
 	*freq = (float32_t)maxIndex * SAMPLE_RATE / SAMPLE_SIZE;
 }
 
