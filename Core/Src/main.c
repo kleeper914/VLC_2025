@@ -39,9 +39,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define SAMPLE_SIZE 1024	//采样点
-#define SAMPLE_RATE 44100	//采样率
-#define NUM_STAGES 	12		//IIR滤波器的节数
+#define SAMPLE_SIZE 7200 * 2	//采样点
+#define SAMPLE_RATE 4000	//采样率
 #define PI 			3.14159265359f
 /* USER CODE END PD */
 
@@ -55,73 +54,12 @@ void filter_test();
 
 /* USER CODE BEGIN PV */
 uint16_t adc_buffer[SAMPLE_SIZE];	//ADC采样数据缓冲区
-float32_t adc_float32[SAMPLE_SIZE];	//ADC采样数据浮点型
-
-float32_t output_1k[SAMPLE_SIZE];		//1k滤波输出
-float32_t output_2k[SAMPLE_SIZE];		//2k滤波输出
-float32_t output_5k[SAMPLE_SIZE];		//5k滤波输出
-
-float32_t mag1 = 0.0;
-float32_t freq1 = 0.0;
-float32_t mag2 = 0.0;
-float32_t freq2 = 0.0;
-float32_t mag5 = 0.0;
-float32_t freq5 = 0.0;
 
 __IO uint8_t AdcConvEnd = 0;		//ADC采样完成标志
 
-float32_t filter1k_coeffs[5 * NUM_STAGES] = {
-		0.0151253954452778,	0,	-0.0151253954452778,	1.97091236178119,	-0.995639426968661,
-		0.0151253954452778,	0,	-0.0151253954452778,	1.98025200304691,	-0.996464594350910,
-		0.0150681544818176,	0,	-0.0150681544818176,	1.96307133631485,	-0.987348771804651,
-		0.0150681544818176,	0,	-0.0150681544818176,	1.97320131755016,	-0.989589426865339,
-		0.0150173823729940,	0,	-0.0150173823729940,	1.95666118808648,	-0.980194505262190,
-		0.0150173823729940,	0,	-0.0150173823729940,	1.96644993347593,	-0.983242491693912,
-		0.0149763055613663,	0,	-0.0149763055613663,	1.95215178685886,	-0.974719002881203,
-		0.0149763055613663,	0,	-0.0149763055613663,	1.96034359939868,	-0.977759379462191,
-		0.0149474624714876,	0,	-0.0149474624714876,	1.94980329862502,	-0.971270330868219,
-		0.0149474624714876,	0,	-0.0149474624714876,	1.95525536559874,	-0.973493250382313,
-		0.0149325974973672,	0,	-0.0149325974973672,	1.94965925987815,	-0.969983821351031,
-		0.0149325974973672,	0,	-0.0149325974973672,	1.95157231053033,	-0.970797076736173,
-};
-float32_t filter1k_state[4 * NUM_STAGES];	//历史状态缓冲区
+uint16_t capture_buffer[2];			//输入捕获值
+uint8_t capture_state = 0;			//0为上升沿捕获，1为下降沿捕获
 
-float32_t filter2k_coeffs[5 * NUM_STAGES] = {
-		0.0302586319840269,	0,	-0.0302586319840269,	1.89316844324442,	-0.991296247751760,
-		0.0302586319840269,	0,	-0.0302586319840269,	1.92847482911976,	-0.992913402460189,
-		0.0300313627713143,	0,	-0.0300313627713143,	1.87889223511091,	-0.974847185685376,
-		0.0300313627713143,	0,	-0.0300313627713143,	1.91429419887443,	-0.979205769015317,
-		0.0298318937589531,	0,	-0.0298318937589531,	1.86805017517718,	-0.960748778688919,
-		0.0298318937589531,	0,	-0.0298318937589531,	1.90033712170697,	-0.966639312044064,
-		0.0296719427211078,	0,	-0.0296719427211078,	1.86133986824491,	-0.950009192878943,
-		0.0296719427211078,	0,	-0.0296719427211078,	1.88728078996523,	-0.955854553168001,
-		0.0295603806262901,	0,	-0.0295603806262901,	1.85903753130330,	-0.943256468996250,
-		0.0295603806262901,	0,	-0.0295603806262901,	1.87585926870832,	-0.947514797398655,
-		0.0295031239037419,	0,	-0.0295031239037419,	1.86102264065125,	-0.940721824307259,
-		0.0295031239037419,	0,	-0.0295031239037419,	1.86685077411769,	-0.942276856898966,
-};
-float32_t filter2k_state[4 * NUM_STAGES];
-
-float32_t filter5k_coeffs[5 * NUM_STAGES] = {
-		0.0764409286375503,	0,	-0.0764409286375503,	1.39319484211737,	-0.978355411731109,
-		0.0764409286375503,	0,	-0.0764409286375503,	1.59411240800055,	-0.981854652160744,
-		0.0750266960934088,	0,	-0.0750266960934088,	1.37251974419307,	-0.938121759700834,
-		0.0750266960934088,	0,	-0.0750266960934088,	1.56090360602338,	-0.947347954653341,
-		0.0738232862834897,	0,	-0.0738232862834897,	1.36285856394326,	-0.904188310612822,
-		0.0738232862834897,	0,	-0.0738232862834897,	1.52550587294765,	-0.916428780562072,
-		0.0728825141021567,	0,	-0.0728825141021567,	1.36414235472618,	-0.878518754877327,
-		0.0728825141021567,	0,	-0.0728825141021567,	1.48950444734561,	-0.890492950172149,
-		0.0722385852128557,	0,	-0.0722385852128557,	1.37553970244748,	-0.862270578809138,
-		0.0722385852128557,	0,	-0.0722385852128557,	1.45460066033068,	-0.870909690378008,
-		0.0719118970515237,	0,	-0.0719118970515237,	1.39564107169777,	-0.855845682851572,
-		0.0719118970515237,	0,	-0.0719118970515237,	1.42265339618337,	-0.858985120388060,
-};
-float32_t filter5k_state[4 * NUM_STAGES];
-
-arm_biquad_casd_df1_inst_f32 S_1k;	//1k filter
-arm_biquad_casd_df1_inst_f32 S_2k;	//2k filter
-arm_biquad_casd_df1_inst_f32 S_5k;	//5k filter
-arm_rfft_fast_instance_f32 fft_instance;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -157,11 +95,6 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-  arm_biquad_cascade_df1_init_f32(&S_1k, NUM_STAGES, filter1k_coeffs, filter1k_state);	//1k filter initialization
-  arm_biquad_cascade_df1_init_f32(&S_2k, NUM_STAGES, filter2k_coeffs, filter2k_state);	//2k filter initialization
-  arm_biquad_cascade_df1_init_f32(&S_5k, NUM_STAGES, filter5k_coeffs, filter5k_state);	//5k filter initialization
-
-  arm_rfft_fast_init_f32(&fft_instance, SAMPLE_SIZE);
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -178,11 +111,12 @@ int main(void)
   MX_FSMC_Init();
   MX_USART1_UART_Init();
   MX_TIM3_Init();
+  MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
   //HAL_TIM_Base_Start_IT(&htim6);
   lcd_init();
-  HAL_TIM_Base_Start(&htim3);
-
+//  HAL_TIM_Base_Start(&htim3);
+  HAL_TIM_IC_Start_IT(&htim1);
 
   lcd_show_string(30, 90, 50, 16, 16, "1K: ", RED);
   lcd_show_string(30, 110, 50, 16, 16, "2K: ", RED);
@@ -195,60 +129,21 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  	  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc_buffer, SAMPLE_SIZE);
-	  	  while(!AdcConvEnd)
-	  	    ;
-	  	  AdcConvEnd = 0;
+	  if(capture_state == 2 && AdcConvEnd)	//检测buffer是否填满
+	  {
+		  AdcConvEnd = 0;
 		  HAL_GPIO_TogglePin(LED_B_GPIO_Port, LED_B_Pin);
+		  capture_state = 0;
+		  HAL_TIM_Base_Stop(&htim3);	//一个buffer填满后重新捕获以同步时钟
+		  HAL_TIM_IC_Start_IT(&htim1);
+	  }
+
 
 		  lcd_clear(WHITE);
 		  lcd_show_string(30, 90, 50, 16, 16, "1K: ", RED);
 		  lcd_show_string(30, 110, 50, 16, 16, "2K: ", RED);
 		  lcd_show_string(30, 130, 50, 16, 16, "5K: ", RED);
 
-		  //adc uint16_t到float32_t的转换
-		  for(int i = 0; i < 1024; i++){
-			  adc_float32[i] = (float)adc_buffer[i];
-		  }
-		  //滤波
-		  arm_biquad_cascade_df1_f32(&S_1k, (float32_t*)adc_float32, output_1k, SAMPLE_SIZE);
-		  arm_biquad_cascade_df1_f32(&S_2k, (float32_t*)adc_float32, output_2k, SAMPLE_SIZE);
-		  arm_biquad_cascade_df1_f32(&S_5k, (float32_t*)adc_float32, output_5k, SAMPLE_SIZE);
-
-		  //作fft变换求频率和幅值
-		  fft_process(output_1k, &mag1, &freq1);
-		  fft_process(output_2k, &mag2, &freq2);
-		  fft_process(output_5k, &mag5, &freq5);
-
-		  //显示滤波结果
-		  char str_1k[20];
-		  char str_2k[20];
-		  char str_5k[20];
-
-		  sprintf(str_1k, "%5.3f V   %5.1f Hz", mag1, freq1);
-		  sprintf(str_2k, "%5.3f V   %5.1f Hz", mag2, freq2);
-		  sprintf(str_5k, "%5.3f V   %5.1f Hz", mag5, freq5);
-
-		  lcd_show_string(80, 90, 200, 16, 16, str_1k, BLUE);
-		  lcd_show_string(80, 110, 200, 16, 16, str_2k, BLUE);
-		  lcd_show_string(80, 130, 200, 16, 16, str_5k, BLUE);
-
-		  lcd_show_string(80, 90, 50, 16, 16, "", RED);
-
-		  for(int i = 0; i < 1024; i++){
-			  //lcd_show_num(120, 150, output_1k[i], 4, 16, RED);
-			  //float32_t* float_num = (float32_t*)adc_float32;
-			  uint32_t adc_x = *(output_1k + i);
-
-			  lcd_show_xnum(80, 150, adc_x, 4, 16, 0, RED);
-			  //lcd_show_xnum(96, 90, temp, 3, 16, 0, RED);
-			  HAL_Delay(100);
-		  }
-
-
-
-
-		  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc_buffer, SAMPLE_SIZE);
 
     /* USER CODE END WHILE */
 
@@ -303,6 +198,45 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+
+
+}
+
+void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
+{
+	if(htim->Instance == TIM1)
+	{
+		switch(capture_state)
+		{
+			case 0 :
+				capture_buffer[0] = HAL_TIM_ReadCapturedValue(&htim1, TIM_CHANNEL_1);	//捕获上升沿
+				__HAL_TIM_SET_CAPTUREPOLARITY(&htim1, TIM_CHANNEL_1, TIM_ICPOLARITY_FALLING);
+				capture_state = 1;
+				break;
+			case 1 :
+				capture_buffer[1] = HAL_TIM_ReadCapturedValue(&htim1, TIM_CHANNEL_1);	//捕获下降沿
+				if(capture_buffer[1] - capture_buffer[0] <= 200)	//高电平时间太短，判定为误判
+				{
+					capture_state = 0;
+				}
+				else
+				{
+					__HAL_TIM_SET_CAPTUREPOLARITY(&htim1, TIM_CHANNEL_1, TIM_ICPOLARITY_RISING);
+					capture_state = 2;
+					HAL_TIM_IC_Stop_IT(&htim1, TIM_CHANNEL_1);	//关闭捕获
+
+					HAL_TIM_Base_Start(&htim3);		//开启定时器
+					HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc_buffer, SAMPLE_SIZE);	//进行ADCDMA采集
+				}
+				break;
+		}
+
+	}
+}
+
 /*
 @param: fft_in: fft变换的输入, 对于本项目应该是滤波器的输出
 @param: mag: 根据fft变换后求得的正弦信号幅值
