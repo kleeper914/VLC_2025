@@ -39,9 +39,11 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define SAMPLE_SIZE 7200 * 2	//采样点
-#define SAMPLE_RATE 4000	//采样率
+#define SAMPLE_SIZE 480 * 2	//采样点
+#define SAMPLE_RATE 16000	//采样率
 #define PI 			3.14159265359f
+#define SYNC_CODE_NUM 8
+#define THRESHOLD 1000
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -60,6 +62,9 @@ __IO uint8_t AdcConvEnd = 0;		//ADC采样完成标志
 uint16_t capture_buffer[2];			//输入捕获值
 uint8_t capture_state = 0;			//0为上升沿捕获，1为下降沿捕获
 
+uint8_t logic_buffer[SAMPLE_SIZE];	//逻辑数据缓冲区，1或0
+uint16_t sync_code[SYNC_CODE_NUM] = {1,0,1,0,1,0,1,0};
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -71,11 +76,6 @@ void SystemClock_Config(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-int __io_putchar(int ch)
-{
-	HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, 1000);
-	return ch;
-}
 /* USER CODE END 0 */
 
 /**
@@ -107,16 +107,17 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_DMA_Init();
-  MX_ADC1_Init();
   MX_FSMC_Init();
   MX_USART1_UART_Init();
   MX_TIM3_Init();
   MX_TIM1_Init();
+  MX_TIM2_Init();
+  MX_ADC2_Init();
   /* USER CODE BEGIN 2 */
   //HAL_TIM_Base_Start_IT(&htim6);
   lcd_init();
 //  HAL_TIM_Base_Start(&htim3);
-  HAL_TIM_IC_Start_IT(&htim1);
+  HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1);
 
   lcd_show_string(30, 90, 50, 16, 16, "1K: ", RED);
   lcd_show_string(30, 110, 50, 16, 16, "2K: ", RED);
@@ -132,14 +133,22 @@ int main(void)
 	  if(capture_state == 2 && AdcConvEnd)	//检测buffer是否填满
 	  {
 		  AdcConvEnd = 0;
-		  HAL_GPIO_TogglePin(LED_B_GPIO_Port, LED_B_Pin);
+		  //HAL_GPIO_TogglePin(LED_B_GPIO_Port, LED_B_Pin);
 		  capture_state = 0;
 		  HAL_TIM_Base_Stop(&htim3);	//一个buffer填满后重新捕获以同步时钟
-		  HAL_TIM_IC_Start_IT(&htim1);
+
+		  to_logic();
+		  int sync_pointer = sync();
+		  if(sync_pointer > -1)
+		  {
+			  HAL_GPIO_TogglePin(LED_B_GPIO_Port, LED_B_Pin);
+			  lcd_show_xnum(30, 150, sync_pointer, 4, 16, 1, BLUE);
+		  }
+		  HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1);
 	  }
 
 
-		  lcd_clear(WHITE);
+		  //lcd_clear(WHITE);
 		  lcd_show_string(30, 90, 50, 16, 16, "1K: ", RED);
 		  lcd_show_string(30, 110, 50, 16, 16, "2K: ", RED);
 		  lcd_show_string(30, 130, 50, 16, 16, "5K: ", RED);
@@ -173,8 +182,8 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-  RCC_OscInitStruct.PLL.PLLM = 25;
-  RCC_OscInitStruct.PLL.PLLN = 336;
+  RCC_OscInitStruct.PLL.PLLM = 4;
+  RCC_OscInitStruct.PLL.PLLN = 168;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
   RCC_OscInitStruct.PLL.PLLQ = 4;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
@@ -201,8 +210,17 @@ void SystemClock_Config(void)
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-
-
+	if(htim->Instance == TIM2)
+	{
+		__HAL_TIM_SET_COUNTER(&htim3, 0);	//计时值清零
+		HAL_TIM_Base_Start(&htim3);		//开启16k定时器3
+		HAL_ADC_Start_DMA(&hadc2, (uint32_t*)adc_buffer, SAMPLE_SIZE);	//进行ADCDMA采集
+		HAL_TIM_Base_Stop_IT(&htim2);	//关闭32k定时器中断
+	}
+//	if(htim->Instance == TIM3)
+//	{
+//		HAL_GPIO_TogglePin(SYNC_GPIO_Port, SYNC_Pin);
+//	}
 }
 
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
@@ -218,8 +236,9 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 				break;
 			case 1 :
 				capture_buffer[1] = HAL_TIM_ReadCapturedValue(&htim1, TIM_CHANNEL_1);	//捕获下降沿
-				if(capture_buffer[1] - capture_buffer[0] <= 200)	//高电平时间太短，判定为误判
+				if(capture_buffer[1] - capture_buffer[0] <= 50)	//高电平时间太短，判定为误判
 				{
+					__HAL_TIM_SET_CAPTUREPOLARITY(&htim1, TIM_CHANNEL_1, TIM_ICPOLARITY_RISING);
 					capture_state = 0;
 				}
 				else
@@ -228,13 +247,50 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 					capture_state = 2;
 					HAL_TIM_IC_Stop_IT(&htim1, TIM_CHANNEL_1);	//关闭捕获
 
-					HAL_TIM_Base_Start(&htim3);		//开启定时器
-					HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc_buffer, SAMPLE_SIZE);	//进行ADCDMA采集
+//					HAL_TIM_Base_Start(&htim3);		//开启定时器
+					__HAL_TIM_SET_COUNTER(&htim2, 0);	//计时值清零
+					HAL_TIM_Base_Start_IT(&htim2);	//开始32k定时器中断
+//					HAL_ADC_Start_DMA(&hadc2, (uint32_t*)adc_buffer, SAMPLE_SIZE);	//进行ADCDMA采集
 				}
 				break;
 		}
 
 	}
+
+}
+
+void to_logic()
+{
+	for(int i = 0; i < SAMPLE_SIZE; i++)
+	{
+		if(adc_buffer[i] > THRESHOLD)
+		{
+			logic_buffer[i] = 1;
+		}
+		else
+		{
+			logic_buffer[i] = 0;
+		}
+	}
+}
+
+int sync()
+{
+	for(int i = 0; i < SAMPLE_SIZE - SYNC_CODE_NUM; i++)
+	{
+		uint8_t sync_score = 0;
+		for(int j = i; j < i + SYNC_CODE_NUM; j++)
+		{
+			logic_buffer[j] == sync_code[j];
+			sync_score++;
+		}
+		if(sync_score >= 8)
+		{
+			return i;
+			break;
+		}
+	}
+	return	-1;
 }
 
 /*
@@ -242,78 +298,78 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 @param: mag: 根据fft变换后求得的正弦信号幅值
 @param: freq: 根据fft变换后求得的正弦信号频率
 */
-void fft_process(float32_t* fft_in, float32_t* mag, float32_t* freq) {
-	float32_t fft_out[SAMPLE_SIZE];
-	float32_t magnitude[SAMPLE_SIZE/2];
-	float32_t maxValue = 0.0;
-	uint16_t maxIndex = 0;
-
-	arm_rfft_fast_f32(&fft_instance, fft_in, fft_out, 0);
-	arm_cmplx_mag_f32(fft_out, magnitude, SAMPLE_SIZE/2);
-	maxValue = magnitude[1];
-	maxIndex = 1;
-	for(int i = 2; i < SAMPLE_SIZE/2; i++) {
-		if(magnitude[i] > maxValue) {
-			maxValue = magnitude[i];
-			maxIndex = i;
-		}
-	}
-	*mag = (maxValue * 2.0 / SAMPLE_SIZE) * 3.3f / 4096.0f;
-	*freq = (float32_t)maxIndex * SAMPLE_RATE / SAMPLE_SIZE;
-}
-
-void filter_test() {
-	float32_t input_signal[SAMPLE_SIZE];
-	float32_t out_1k[SAMPLE_SIZE];
-	float32_t out_2k[SAMPLE_SIZE];
-	float32_t out_5k[SAMPLE_SIZE];
-
-	float32_t mag1k = 0.0;
-	float32_t freq1k = 0.0;
-	float32_t mag2k = 0.0;
-	float32_t freq2k = 0.0;
-	float32_t mag5k = 0.0;
-	float32_t freq5k = 0.0;
-
-	//生成合成信号
-	for(int i = 0; i < SAMPLE_SIZE; i++) {
-		float t = (float)i / SAMPLE_RATE;
-
-		float pwm1k = (fmodf(t * 1000.0f, 1.0f) < 0.5) ? 1.0f : 0.0f;
-		float pwm2k = (fmodf(t * 2000.0f, 1.0f) < 0.5) ? 1.0f : 0.0f;
-		float pwm5k = (fmodf(t * 5000.0f, 1.0f) < 0.5) ? 1.0f : 0.0f;
-		input_signal[i] = (uint16_t)((pwm1k + pwm2k + pwm5k) * 4096.f / 3.3f);
-	}
-
-	arm_biquad_cascade_df1_f32(&S_1k, input_signal, out_1k, SAMPLE_SIZE);
-	arm_biquad_cascade_df1_f32(&S_2k, input_signal, out_2k, SAMPLE_SIZE);
-	arm_biquad_cascade_df1_f32(&S_5k, input_signal, out_5k, SAMPLE_SIZE);
-
-	fft_process(out_1k, &mag1k, &freq1k);
-	fft_process(out_2k, &mag2k, &freq2k);
-	fft_process(out_5k, &mag5k, &freq5k);
-
-	char mag1k_str[10];
-	char freq1k_str[10];
-	char mag2k_str[10];
-	char freq2k_str[10];
-	char mag5k_str[10];
-	char freq5k_str[10];
-
-	sprintf(mag1k_str, "%.3f", mag1k);
-	sprintf(freq1k_str, "%.3f", freq1k);
-	sprintf(mag2k_str, "%.3f", mag2k);
-	sprintf(freq2k_str, "%.3f", freq2k);
-	sprintf(mag5k_str, "%.3f", mag5k);
-	sprintf(freq5k_str, "%.3f", freq5k);
-
-	lcd_show_string(30, 150, 200, 16, 16, mag1k_str, BLUE);
-	lcd_show_string(30, 170, 200, 16, 16, freq1k_str, BLUE);
-	lcd_show_string(30, 190, 200, 16, 16, mag2k_str, BLUE);
-	lcd_show_string(30, 210, 200, 16, 16, freq2k_str, BLUE);
-	lcd_show_string(30, 230, 200, 16, 16, mag5k_str, BLUE);
-	lcd_show_string(30, 250, 200, 16, 16, freq5k_str, BLUE);
-}
+//void fft_process(float32_t* fft_in, float32_t* mag, float32_t* freq) {
+//	float32_t fft_out[SAMPLE_SIZE];
+//	float32_t magnitude[SAMPLE_SIZE/2];
+//	float32_t maxValue = 0.0;
+//	uint16_t maxIndex = 0;
+//
+//	arm_rfft_fast_f32(&fft_instance, fft_in, fft_out, 0);
+//	arm_cmplx_mag_f32(fft_out, magnitude, SAMPLE_SIZE/2);
+//	maxValue = magnitude[1];
+//	maxIndex = 1;
+//	for(int i = 2; i < SAMPLE_SIZE/2; i++) {
+//		if(magnitude[i] > maxValue) {
+//			maxValue = magnitude[i];
+//			maxIndex = i;
+//		}
+//	}
+//	*mag = (maxValue * 2.0 / SAMPLE_SIZE) * 3.3f / 4096.0f;
+//	*freq = (float32_t)maxIndex * SAMPLE_RATE / SAMPLE_SIZE;
+//}
+//
+//void filter_test() {
+//	float32_t input_signal[SAMPLE_SIZE];
+//	float32_t out_1k[SAMPLE_SIZE];
+//	float32_t out_2k[SAMPLE_SIZE];
+//	float32_t out_5k[SAMPLE_SIZE];
+//
+//	float32_t mag1k = 0.0;
+//	float32_t freq1k = 0.0;
+//	float32_t mag2k = 0.0;
+//	float32_t freq2k = 0.0;
+//	float32_t mag5k = 0.0;
+//	float32_t freq5k = 0.0;
+//
+//	//生成合成信号
+//	for(int i = 0; i < SAMPLE_SIZE; i++) {
+//		float t = (float)i / SAMPLE_RATE;
+//
+//		float pwm1k = (fmodf(t * 1000.0f, 1.0f) < 0.5) ? 1.0f : 0.0f;
+//		float pwm2k = (fmodf(t * 2000.0f, 1.0f) < 0.5) ? 1.0f : 0.0f;
+//		float pwm5k = (fmodf(t * 5000.0f, 1.0f) < 0.5) ? 1.0f : 0.0f;
+//		input_signal[i] = (uint16_t)((pwm1k + pwm2k + pwm5k) * 4096.f / 3.3f);
+//	}
+//
+//	arm_biquad_cascade_df1_f32(&S_1k, input_signal, out_1k, SAMPLE_SIZE);
+//	arm_biquad_cascade_df1_f32(&S_2k, input_signal, out_2k, SAMPLE_SIZE);
+//	arm_biquad_cascade_df1_f32(&S_5k, input_signal, out_5k, SAMPLE_SIZE);
+//
+//	fft_process(out_1k, &mag1k, &freq1k);
+//	fft_process(out_2k, &mag2k, &freq2k);
+//	fft_process(out_5k, &mag5k, &freq5k);
+//
+//	char mag1k_str[10];
+//	char freq1k_str[10];
+//	char mag2k_str[10];
+//	char freq2k_str[10];
+//	char mag5k_str[10];
+//	char freq5k_str[10];
+//
+//	sprintf(mag1k_str, "%.3f", mag1k);
+//	sprintf(freq1k_str, "%.3f", freq1k);
+//	sprintf(mag2k_str, "%.3f", mag2k);
+//	sprintf(freq2k_str, "%.3f", freq2k);
+//	sprintf(mag5k_str, "%.3f", mag5k);
+//	sprintf(freq5k_str, "%.3f", freq5k);
+//
+//	lcd_show_string(30, 150, 200, 16, 16, mag1k_str, BLUE);
+//	lcd_show_string(30, 170, 200, 16, 16, freq1k_str, BLUE);
+//	lcd_show_string(30, 190, 200, 16, 16, mag2k_str, BLUE);
+//	lcd_show_string(30, 210, 200, 16, 16, freq2k_str, BLUE);
+//	lcd_show_string(30, 230, 200, 16, 16, mag5k_str, BLUE);
+//	lcd_show_string(30, 250, 200, 16, 16, freq5k_str, BLUE);
+//}
 /* USER CODE END 4 */
 
 /**
