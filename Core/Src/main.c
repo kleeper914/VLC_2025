@@ -39,17 +39,21 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define SAMPLE_SIZE 480 * 2	//采样点
+#define SAMPLE_SIZE 360 * 20	//采样点
 #define SAMPLE_RATE 16000	//采样率
 #define PI 			3.14159265359f
 #define SYNC_CODE_NUM 8
-#define THRESHOLD 1000
+#define THRESHOLD 1800
+#define LED_CODE_NUM 8
+#define FFH_CODE_NUM 8
+#define SYNC_NUM_MAX 15 * 20
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-void fft_process(float32_t* fft_in, float32_t* mag, float32_t* freq);
-void filter_test();
+//void fft_process(float32_t* fft_in, float32_t* mag, float32_t* freq);
+//void filter_test();
+
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -64,6 +68,19 @@ uint8_t capture_state = 0;			//0为上升沿捕获，1为下降沿捕获
 
 uint8_t logic_buffer[SAMPLE_SIZE];	//逻辑数据缓冲区，1或0
 uint16_t sync_code[SYNC_CODE_NUM] = {1,0,1,0,1,0,1,0};
+uint16_t LED0_code[LED_CODE_NUM] = {0,0,0,0,1,0,1,0};
+uint16_t LED1_code[LED_CODE_NUM] = {0,0,1,0,1,1,0,1};
+uint16_t LED2_code[LED_CODE_NUM] = {0,0,0,1,1,0,0,1};
+uint16_t FFH[FFH_CODE_NUM] = {1,1,1,1,1,1,1,1};
+
+int sync_index[SYNC_NUM_MAX] = {-1};	//存放同步头的索引值
+uint8_t sync_num = 0;	//同步头个数
+int led_index[SYNC_NUM_MAX] = {-1};		//存放对应同步头索引值的led类型，0为led0，1为led1，2为led2，-1为无
+
+//存放led对应的光强值
+uint32_t led0_intensity = 0;
+uint32_t led1_intensity = 0;
+uint32_t led2_intensity = 0;
 
 /* USER CODE END PV */
 
@@ -119,9 +136,9 @@ int main(void)
 //  HAL_TIM_Base_Start(&htim3);
   HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1);
 
-  lcd_show_string(30, 90, 50, 16, 16, "1K: ", RED);
-  lcd_show_string(30, 110, 50, 16, 16, "2K: ", RED);
-  lcd_show_string(30, 130, 50, 16, 16, "5K: ", RED);
+//  lcd_show_string(30, 90, 50, 16, 16, "1K: ", RED);
+//  lcd_show_string(30, 110, 50, 16, 16, "2K: ", RED);
+//  lcd_show_string(30, 130, 50, 16, 16, "5K: ", RED);
 
   //filter_test();
   /* USER CODE END 2 */
@@ -138,20 +155,22 @@ int main(void)
 		  HAL_TIM_Base_Stop(&htim3);	//一个buffer填满后重新捕获以同步时钟
 
 		  to_logic();
-		  int sync_pointer = sync();
-		  if(sync_pointer > -1)
-		  {
-			  HAL_GPIO_TogglePin(LED_B_GPIO_Port, LED_B_Pin);
-			  lcd_show_xnum(30, 150, sync_pointer, 4, 16, 1, BLUE);
-		  }
+		  sync();
+		  find_led();
+		  get_led_intensity();
 		  HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1);
+		  HAL_GPIO_TogglePin(LED_B_GPIO_Port, LED_B_Pin);
+		  lcd_clear(WHITE);
+		  lcd_show_xnum(30, 150, led0_intensity, 4, 16, 0X80, RED);
+		  lcd_show_xnum(30, 180, led1_intensity, 4, 16, 0X80, RED);
+		  lcd_show_xnum(30, 210, led2_intensity, 4, 16, 0X80, RED);
 	  }
 
 
+//		  lcd_show_string(30, 90, 50, 16, 16, "1K: ", RED);
+//		  lcd_show_string(30, 110, 50, 16, 16, "2K: ", RED);
+//		  lcd_show_string(30, 130, 50, 16, 16, "5K: ", RED);
 		  //lcd_clear(WHITE);
-		  lcd_show_string(30, 90, 50, 16, 16, "1K: ", RED);
-		  lcd_show_string(30, 110, 50, 16, 16, "2K: ", RED);
-		  lcd_show_string(30, 130, 50, 16, 16, "5K: ", RED);
 
 
     /* USER CODE END WHILE */
@@ -274,23 +293,113 @@ void to_logic()
 	}
 }
 
-int sync()
+void sync()
 {
+	sync_num = 0;
 	for(int i = 0; i < SAMPLE_SIZE - SYNC_CODE_NUM; i++)
 	{
 		uint8_t sync_score = 0;
 		for(int j = i; j < i + SYNC_CODE_NUM; j++)
 		{
-			logic_buffer[j] == sync_code[j];
-			sync_score++;
+			if(logic_buffer[j] == sync_code[j - i])
+			{
+				sync_score++;
+			}
 		}
 		if(sync_score >= 8)
 		{
-			return i;
-			break;
+			sync_index[sync_num] = i;
+			sync_num++;
 		}
 	}
-	return	-1;
+}
+
+void find_led()
+{
+	for(int i = 0; i < sync_num - 1; i++)	//舍弃最后一个同步头，防止越界
+	{
+		int index = sync_index[i];
+		uint8_t led0_score = 0;
+		uint8_t led1_score = 0;
+		uint8_t led2_score = 0;
+		if(index > -1)
+		{
+			for(int j = index + SYNC_CODE_NUM; j < index + SYNC_CODE_NUM + LED_CODE_NUM; j++)
+			{
+				if(logic_buffer[j] == LED0_code[j - index - SYNC_CODE_NUM])
+				{
+					led0_score++;
+				}
+				if(logic_buffer[j] == LED1_code[j - index - SYNC_CODE_NUM])
+				{
+					led1_score++;
+				}
+				if(logic_buffer[j] == LED2_code[j - index - SYNC_CODE_NUM])
+				{
+					led2_score++;
+				}
+			}
+			if(led0_score >= 8)
+			{
+				led_index[i] = 0;
+			}
+			else if(led1_score >= 8)
+			{
+				led_index[i] = 1;
+			}
+			else if(led2_score >= 8)
+			{
+				led_index[i] = 2;
+			}
+		}
+	}
+}
+
+void get_led_intensity()
+{
+	uint32_t led0_intensity_sum = 0;
+	uint32_t led1_intensity_sum = 0;
+	uint32_t led2_intensity_sum = 0;
+
+	uint16_t led0_num = 0;
+	uint16_t led1_num = 0;
+	uint16_t led2_num = 0;
+
+	for(int i = 0; i < sync_num - 1; i++)	//舍弃最后一个同步头，防止越界
+	{
+		int led = led_index[i];
+		int index = sync_index[i];
+		switch(led)
+		{
+			case 0:
+				for(int j = 1; j < FFH_CODE_NUM; j++)
+				{
+					led0_intensity_sum += adc_buffer[j + index + SYNC_CODE_NUM + LED_CODE_NUM];
+					led0_num++;
+				}
+				break;
+			case 1:
+				for(int j = 1; j < FFH_CODE_NUM; j++)
+				{
+					led1_intensity_sum += adc_buffer[j + index + SYNC_CODE_NUM + LED_CODE_NUM];
+					led1_num++;
+				}
+				break;
+			case 2:
+				for(int j = 1; j < FFH_CODE_NUM; j++)
+				{
+					led2_intensity_sum += adc_buffer[j + index + SYNC_CODE_NUM + LED_CODE_NUM];
+					led2_num++;
+				}
+				break;
+			default :
+
+				break;
+		}
+	}
+	led0_intensity = led0_intensity_sum / led0_num;
+	led1_intensity = led1_intensity_sum / led1_num;
+	led2_intensity = led2_intensity_sum / led2_num;
 }
 
 /*
