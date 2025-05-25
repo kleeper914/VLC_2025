@@ -82,6 +82,32 @@ uint32_t led0_intensity = 0;
 uint32_t led1_intensity = 0;
 uint32_t led2_intensity = 0;
 
+
+
+
+/* Private typedef -----------------------------------------------------------*/
+/* USER CODE BEGIN PTD */
+typedef struct
+{             
+    float x;                //x坐标
+    float y;                //y坐标
+}Point;
+/* USER CODE END PTD */
+
+/* Private variables ---------------------------------------------------------*/
+/* USER CODE BEGIN PV */
+// ... 现有变量声明 ...
+
+// 添加定位相关变量
+Point current_position = {0.0f, 0.0f};  // 当前位置
+float distances[3] = {0.0f, 0.0f, 0.0f};  // 三个LED的距离
+
+// LED固定位置坐标
+static const Point LED_POSITIONS[3] = {
+    {-10.0f, 0.0f},  // LED0位置
+    {10.0f, 0.0f},   // LED1位置
+    {0.0f, 10.0f}    // LED2位置
+};
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -158,6 +184,8 @@ int main(void)
 		  sync();
 		  find_led();
 		  get_led_intensity();
+		  calculate_distance();
+		  calculate_position();
 		  HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1);
 		  HAL_GPIO_TogglePin(LED_B_GPIO_Port, LED_B_Pin);
 		  lcd_clear(WHITE);
@@ -400,6 +428,68 @@ void get_led_intensity()
 	led0_intensity = led0_intensity_sum / led0_num;
 	led1_intensity = led1_intensity_sum / led1_num;
 	led2_intensity = led2_intensity_sum / led2_num;
+}
+
+
+// 光强度转换为距离的函数
+float calculate_distance() {
+    // TODO: 根据实际测试数据实现光强到距离的转换
+	distances[0]= -2E-05f * led0_intensity * led0_intensity + 0.0516f * led0_intensity + 0.2903f;
+	distances[1]= -2E-05f * led1_intensity * led1_intensity + 0.0899f * led1_intensity - 44.861f;
+	distances[2]= -2E-05f * led2_intensity * led2_intensity + 0.0773f * led2_intensity - 26.894f;
+    // 这里需要添加您的转换公式
+
+}
+
+// 三点定位函数
+Point threePoints(float *dis, Point *ps) 
+{
+    Point p = {0,0}; //初始化点为无效值
+    if (dis == NULL || ps == NULL)
+        return p;
+
+    for (int i = 0; i < 3; ++i)
+    {
+        //检查距离是否有问题
+        if (dis[i] < 0)
+            return p;
+
+        for (int j = i + 1; j < 3; ++j) 
+        {
+            //圆心距离PQ
+            float p2p = (float)sqrt((ps[i].x - ps[j].x)*(ps[i].x - ps[j].x) +
+                                    (ps[i].y - ps[j].y)*(ps[i].y - ps[j].y));
+            //判断两圆是否相交
+            if (dis[i] + dis[j] <= p2p) 
+            {
+                //不相交，按比例求
+                p.x += ps[i].x + (ps[j].x - ps[i].x)*dis[i] / (dis[i] + dis[j]);
+                p.y += ps[i].y + (ps[j].y - ps[i].y)*dis[i] / (dis[i] + dis[j]);
+            }
+            else
+            {
+                //相交则套用公式
+                //PC
+                float dr = p2p / 2 + (dis[i] * dis[i] - dis[j] * dis[j]) / (2 * p2p); 
+                //x = xp + (xq-xp) * PC / PQ
+                p.x += ps[i].x + (ps[j].x - ps[i].x)*dr / p2p;
+                //y = yp + (yq-yp) * PC / PQ
+                p.y += ps[i].y + (ps[j].y - ps[i].y)*dr / p2p;
+            }
+        }
+    }
+    
+    //三个圆两两求点，最终得到三个点，求其均值
+    p.x /= 3;
+    p.y /= 3;
+
+    return p;
+}
+
+// 位置计算函数
+void calculate_position(void) {
+    // 计算每个LED的距离
+    
 }
 
 /*
