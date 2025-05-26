@@ -29,6 +29,7 @@
 /* USER CODE BEGIN Includes */
 #include "../../Drivers/BSP/LCD/lcd.h"
 #include "arm_math.h"
+#include "../../Drivers/BSP/RSS/rss.h"	//三点定位法
 
 /* USER CODE END Includes */
 
@@ -81,6 +82,12 @@ int led_index[SYNC_NUM_MAX] = {-1};		//存放对应同步头索引值的led类�
 uint32_t led0_intensity = 0;
 uint32_t led1_intensity = 0;
 uint32_t led2_intensity = 0;
+
+//存放led的位置
+Point led_locations[3] = {{0, 10}, {-10, 0}, {10, 0}};	//led0在(0, 10)，led1在(-10, 0)，led2在(10, 0)
+
+//存放PD位置
+Point PDlocation = {-1, -1};	//初始化为无效值
 
 /* USER CODE END PV */
 
@@ -158,12 +165,23 @@ int main(void)
 		  sync();
 		  find_led();
 		  get_led_intensity();
+		  get_location();	//获取PD位置
+		  char string_x[30];
+		  char string_y[30];
+		  sprintf(string_x, "x: %.3f", PDlocation.x);
+		  sprintf(string_y, "y: %.3f", PDlocation.y);
 		  HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1);
 		  HAL_GPIO_TogglePin(LED_B_GPIO_Port, LED_B_Pin);
 		  lcd_clear(WHITE);
 		  lcd_show_xnum(30, 150, led0_intensity, 4, 16, 0X80, RED);
 		  lcd_show_xnum(30, 180, led1_intensity, 4, 16, 0X80, RED);
 		  lcd_show_xnum(30, 210, led2_intensity, 4, 16, 0X80, RED);
+//		  lcd_show_xnum(30, 240, x, 4, 16, 0X00, RED);
+//		  lcd_show_xnum(60, 240, x_small, 4, 16, 0X00, RED);
+//		  lcd_show_xnum(30, 270, y, 4, 16, 0X00, RED);
+//		  lcd_show_xnum(60, 270, y_small, 4, 16, 0X00, RED);
+		  lcd_show_string(30, 240, 200, 32, 32, string_x, BLUE);
+		  lcd_show_string(30, 270, 200, 32, 32, string_y, BLUE);
 	  }
 
 
@@ -397,11 +415,26 @@ void get_led_intensity()
 				break;
 		}
 	}
-	led0_intensity = led0_intensity_sum / led0_num;
-	led1_intensity = led1_intensity_sum / led1_num;
-	led2_intensity = led2_intensity_sum / led2_num;
+	led0_intensity = (led0_num > 0 && led0_intensity_sum > 0) ? led0_intensity_sum / led0_num : led0_intensity;	//避免除数为0
+	led1_intensity = (led1_num > 0 && led1_intensity_sum > 0) ? led1_intensity_sum / led1_num : led1_intensity;
+	led2_intensity = (led2_num > 0 && led2_intensity_sum > 0) ? led2_intensity_sum / led2_num : led2_intensity;
 }
 
+void get_location()
+{
+	uint16_t location = 0;
+	float led0_radius = 0.0f;
+	float led1_radius = 0.0f;
+	float led2_radius = 0.0f;
+
+	led0_radius = -8.258245051149834e-11*led0_intensity*led0_intensity*led0_intensity*led0_intensity+8.603303598173248e-7*led0_intensity*led0_intensity*led0_intensity-0.003343692130742398*led0_intensity*led0_intensity+5.716859893344553*led0_intensity-3581.1780710049975;	//根据实验数据拟合的函数
+	led1_radius = -3.5960151839135584e-10*led1_intensity*led1_intensity*led1_intensity*led1_intensity+0.000003851077174734846*led1_intensity*led1_intensity*led1_intensity-0.015389238714354235*led1_intensity*led1_intensity+27.158329518946147*led1_intensity-17805.994712478332;
+	led2_radius =  -5.040206617568613e-11*led2_intensity*led2_intensity*led2_intensity*led2_intensity+4.751187260064662e-7*led2_intensity*led2_intensity*led2_intensity-0.0016747497267775738*led2_intensity*led2_intensity+2.58985725128424*led2_intensity-1435.2323446989374;
+
+	float distances[3] = {led0_radius > 0 ? led0_radius : 1, led1_radius > 0 ? led1_radius : 1, led2_radius > 0 ? led2_radius : 1};	//存放距离
+
+	PDlocation = getPDlocation(distances, led_locations);	//调用三点定位法获取PD位置
+}
 /*
 @param: fft_in: fft变换的输入, 对于本项目应该是滤波器的输出
 @param: mag: 根据fft变换后求得的正弦信号幅值
@@ -410,7 +443,7 @@ void get_led_intensity()
 //void fft_process(float32_t* fft_in, float32_t* mag, float32_t* freq) {
 //	float32_t fft_out[SAMPLE_SIZE];
 //	float32_t magnitude[SAMPLE_SIZE/2];
-//	float32_t maxValue = 0.0;
+//	float32_t maled0_intensityValue = 0.0;
 //	uint16_t maxIndex = 0;
 //
 //	arm_rfft_fast_f32(&fft_instance, fft_in, fft_out, 0);
