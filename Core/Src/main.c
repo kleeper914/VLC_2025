@@ -39,89 +39,75 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define SAMPLE_SIZE 1024	//采样点
-#define SAMPLE_RATE 44100	//采样率
-#define NUM_STAGES 	12		//IIR滤波器的节数
+#define SAMPLE_SIZE 360 * 20	//采样点
+#define SAMPLE_RATE 16000	//采样率
 #define PI 			3.14159265359f
+#define SYNC_CODE_NUM 8
+#define THRESHOLD 1800
+#define LED_CODE_NUM 8
+#define FFH_CODE_NUM 8
+#define SYNC_NUM_MAX 15 * 20
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-void fft_process(float32_t* fft_in, float32_t* mag, float32_t* freq);
-void filter_test();
+//void fft_process(float32_t* fft_in, float32_t* mag, float32_t* freq);
+//void filter_test();
+
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
 uint16_t adc_buffer[SAMPLE_SIZE];	//ADC采样数据缓冲区
-float32_t adc_float32[SAMPLE_SIZE];	//ADC采样数据浮点型
-
-float32_t output_1k[SAMPLE_SIZE];		//1k滤波输出
-float32_t output_2k[SAMPLE_SIZE];		//2k滤波输出
-float32_t output_5k[SAMPLE_SIZE];		//5k滤波输出
-
-float32_t mag1 = 0.0;
-float32_t freq1 = 0.0;
-float32_t mag2 = 0.0;
-float32_t freq2 = 0.0;
-float32_t mag5 = 0.0;
-float32_t freq5 = 0.0;
 
 __IO uint8_t AdcConvEnd = 0;		//ADC采样完成标志
 
-float32_t filter1k_coeffs[5 * NUM_STAGES] = {
-		0.0151253954452778,	0,	-0.0151253954452778,	1.97091236178119,	-0.995639426968661,
-		0.0151253954452778,	0,	-0.0151253954452778,	1.98025200304691,	-0.996464594350910,
-		0.0150681544818176,	0,	-0.0150681544818176,	1.96307133631485,	-0.987348771804651,
-		0.0150681544818176,	0,	-0.0150681544818176,	1.97320131755016,	-0.989589426865339,
-		0.0150173823729940,	0,	-0.0150173823729940,	1.95666118808648,	-0.980194505262190,
-		0.0150173823729940,	0,	-0.0150173823729940,	1.96644993347593,	-0.983242491693912,
-		0.0149763055613663,	0,	-0.0149763055613663,	1.95215178685886,	-0.974719002881203,
-		0.0149763055613663,	0,	-0.0149763055613663,	1.96034359939868,	-0.977759379462191,
-		0.0149474624714876,	0,	-0.0149474624714876,	1.94980329862502,	-0.971270330868219,
-		0.0149474624714876,	0,	-0.0149474624714876,	1.95525536559874,	-0.973493250382313,
-		0.0149325974973672,	0,	-0.0149325974973672,	1.94965925987815,	-0.969983821351031,
-		0.0149325974973672,	0,	-0.0149325974973672,	1.95157231053033,	-0.970797076736173,
-};
-float32_t filter1k_state[4 * NUM_STAGES];	//历史状态缓冲区
+uint16_t capture_buffer[2];			//输入捕获值
+uint8_t capture_state = 0;			//0为上升沿捕获，1为下降沿捕获
 
-float32_t filter2k_coeffs[5 * NUM_STAGES] = {
-		0.0302586319840269,	0,	-0.0302586319840269,	1.89316844324442,	-0.991296247751760,
-		0.0302586319840269,	0,	-0.0302586319840269,	1.92847482911976,	-0.992913402460189,
-		0.0300313627713143,	0,	-0.0300313627713143,	1.87889223511091,	-0.974847185685376,
-		0.0300313627713143,	0,	-0.0300313627713143,	1.91429419887443,	-0.979205769015317,
-		0.0298318937589531,	0,	-0.0298318937589531,	1.86805017517718,	-0.960748778688919,
-		0.0298318937589531,	0,	-0.0298318937589531,	1.90033712170697,	-0.966639312044064,
-		0.0296719427211078,	0,	-0.0296719427211078,	1.86133986824491,	-0.950009192878943,
-		0.0296719427211078,	0,	-0.0296719427211078,	1.88728078996523,	-0.955854553168001,
-		0.0295603806262901,	0,	-0.0295603806262901,	1.85903753130330,	-0.943256468996250,
-		0.0295603806262901,	0,	-0.0295603806262901,	1.87585926870832,	-0.947514797398655,
-		0.0295031239037419,	0,	-0.0295031239037419,	1.86102264065125,	-0.940721824307259,
-		0.0295031239037419,	0,	-0.0295031239037419,	1.86685077411769,	-0.942276856898966,
-};
-float32_t filter2k_state[4 * NUM_STAGES];
+uint8_t logic_buffer[SAMPLE_SIZE];	//逻辑数据缓冲区，1或0
+uint16_t sync_code[SYNC_CODE_NUM] = {1,0,1,0,1,0,1,0};
+uint16_t LED0_code[LED_CODE_NUM] = {0,0,0,0,1,0,1,0};
+uint16_t LED1_code[LED_CODE_NUM] = {0,0,1,0,1,1,0,1};
+uint16_t LED2_code[LED_CODE_NUM] = {0,0,0,1,1,0,0,1};
+uint16_t FFH[FFH_CODE_NUM] = {1,1,1,1,1,1,1,1};
 
-float32_t filter5k_coeffs[5 * NUM_STAGES] = {
-		0.0764409286375503,	0,	-0.0764409286375503,	1.39319484211737,	-0.978355411731109,
-		0.0764409286375503,	0,	-0.0764409286375503,	1.59411240800055,	-0.981854652160744,
-		0.0750266960934088,	0,	-0.0750266960934088,	1.37251974419307,	-0.938121759700834,
-		0.0750266960934088,	0,	-0.0750266960934088,	1.56090360602338,	-0.947347954653341,
-		0.0738232862834897,	0,	-0.0738232862834897,	1.36285856394326,	-0.904188310612822,
-		0.0738232862834897,	0,	-0.0738232862834897,	1.52550587294765,	-0.916428780562072,
-		0.0728825141021567,	0,	-0.0728825141021567,	1.36414235472618,	-0.878518754877327,
-		0.0728825141021567,	0,	-0.0728825141021567,	1.48950444734561,	-0.890492950172149,
-		0.0722385852128557,	0,	-0.0722385852128557,	1.37553970244748,	-0.862270578809138,
-		0.0722385852128557,	0,	-0.0722385852128557,	1.45460066033068,	-0.870909690378008,
-		0.0719118970515237,	0,	-0.0719118970515237,	1.39564107169777,	-0.855845682851572,
-		0.0719118970515237,	0,	-0.0719118970515237,	1.42265339618337,	-0.858985120388060,
-};
-float32_t filter5k_state[4 * NUM_STAGES];
+int sync_index[SYNC_NUM_MAX] = {-1};	//存放同步头的索引值
+uint8_t sync_num = 0;	//同步头个数
+int led_index[SYNC_NUM_MAX] = {-1};		//存放对应同步头索引值的led类型，0为led0，1为led1，2为led2，-1为无
 
-arm_biquad_casd_df1_inst_f32 S_1k;	//1k filter
-arm_biquad_casd_df1_inst_f32 S_2k;	//2k filter
-arm_biquad_casd_df1_inst_f32 S_5k;	//5k filter
-arm_rfft_fast_instance_f32 fft_instance;
+//存放led对应的光强值
+uint32_t led0_intensity = 0;
+uint32_t led1_intensity = 0;
+uint32_t led2_intensity = 0;
+
+
+
+
+/* Private typedef -----------------------------------------------------------*/
+/* USER CODE BEGIN PTD */
+typedef struct
+{             
+    float x;                //x坐标
+    float y;                //y坐标
+}Point;
+/* USER CODE END PTD */
+
+/* Private variables ---------------------------------------------------------*/
+/* USER CODE BEGIN PV */
+// ... 现有变量声明 ...
+
+// 添加定位相关变量
+Point current_position = {0.0f, 0.0f};  // 当前位置
+float distances[3] = {0.0f, 0.0f, 0.0f};  // 三个LED的距离
+
+// LED固定位置坐标
+static const Point LED_POSITIONS[3] = {
+    {-10.0f, 0.0f},  // LED0位置
+    {10.0f, 0.0f},   // LED1位置
+    {0.0f, 10.0f}    // LED2位置
+};
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -133,11 +119,6 @@ void SystemClock_Config(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-int __io_putchar(int ch)
-{
-	HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, 1000);
-	return ch;
-}
 /* USER CODE END 0 */
 
 /**
@@ -157,11 +138,6 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-  arm_biquad_cascade_df1_init_f32(&S_1k, NUM_STAGES, filter1k_coeffs, filter1k_state);	//1k filter initialization
-  arm_biquad_cascade_df1_init_f32(&S_2k, NUM_STAGES, filter2k_coeffs, filter2k_state);	//2k filter initialization
-  arm_biquad_cascade_df1_init_f32(&S_5k, NUM_STAGES, filter5k_coeffs, filter5k_state);	//5k filter initialization
-
-  arm_rfft_fast_init_f32(&fft_instance, SAMPLE_SIZE);
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -174,19 +150,21 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_DMA_Init();
-  MX_ADC1_Init();
   MX_FSMC_Init();
   MX_USART1_UART_Init();
   MX_TIM3_Init();
+  MX_TIM1_Init();
+  MX_TIM2_Init();
+  MX_ADC2_Init();
   /* USER CODE BEGIN 2 */
   //HAL_TIM_Base_Start_IT(&htim6);
   lcd_init();
-  HAL_TIM_Base_Start(&htim3);
+//  HAL_TIM_Base_Start(&htim3);
+  HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1);
 
-
-  lcd_show_string(30, 90, 50, 16, 16, "1K: ", RED);
-  lcd_show_string(30, 110, 50, 16, 16, "2K: ", RED);
-  lcd_show_string(30, 130, 50, 16, 16, "5K: ", RED);
+//  lcd_show_string(30, 90, 50, 16, 16, "1K: ", RED);
+//  lcd_show_string(30, 110, 50, 16, 16, "2K: ", RED);
+//  lcd_show_string(30, 130, 50, 16, 16, "5K: ", RED);
 
   //filter_test();
   /* USER CODE END 2 */
@@ -195,60 +173,33 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  	  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc_buffer, SAMPLE_SIZE);
-	  	  while(!AdcConvEnd)
-	  	    ;
-	  	  AdcConvEnd = 0;
+	  if(capture_state == 2 && AdcConvEnd)	//检测buffer是否填满
+	  {
+		  AdcConvEnd = 0;
+		  //HAL_GPIO_TogglePin(LED_B_GPIO_Port, LED_B_Pin);
+		  capture_state = 0;
+		  HAL_TIM_Base_Stop(&htim3);	//一个buffer填满后重新捕获以同步时钟
+
+		  to_logic();
+		  sync();
+		  find_led();
+		  get_led_intensity();
+		  calculate_distance();
+		  calculate_position();
+		  HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1);
 		  HAL_GPIO_TogglePin(LED_B_GPIO_Port, LED_B_Pin);
-
 		  lcd_clear(WHITE);
-		  lcd_show_string(30, 90, 50, 16, 16, "1K: ", RED);
-		  lcd_show_string(30, 110, 50, 16, 16, "2K: ", RED);
-		  lcd_show_string(30, 130, 50, 16, 16, "5K: ", RED);
-
-		  //adc uint16_t到float32_t的转换
-		  for(int i = 0; i < 1024; i++){
-			  adc_float32[i] = (float)adc_buffer[i];
-		  }
-		  //滤波
-		  arm_biquad_cascade_df1_f32(&S_1k, (float32_t*)adc_float32, output_1k, SAMPLE_SIZE);
-		  arm_biquad_cascade_df1_f32(&S_2k, (float32_t*)adc_float32, output_2k, SAMPLE_SIZE);
-		  arm_biquad_cascade_df1_f32(&S_5k, (float32_t*)adc_float32, output_5k, SAMPLE_SIZE);
-
-		  //作fft变换求频率和幅值
-		  fft_process(output_1k, &mag1, &freq1);
-		  fft_process(output_2k, &mag2, &freq2);
-		  fft_process(output_5k, &mag5, &freq5);
-
-		  //显示滤波结果
-		  char str_1k[20];
-		  char str_2k[20];
-		  char str_5k[20];
-
-		  sprintf(str_1k, "%5.3f V   %5.1f Hz", mag1, freq1);
-		  sprintf(str_2k, "%5.3f V   %5.1f Hz", mag2, freq2);
-		  sprintf(str_5k, "%5.3f V   %5.1f Hz", mag5, freq5);
-
-		  lcd_show_string(80, 90, 200, 16, 16, str_1k, BLUE);
-		  lcd_show_string(80, 110, 200, 16, 16, str_2k, BLUE);
-		  lcd_show_string(80, 130, 200, 16, 16, str_5k, BLUE);
-
-		  lcd_show_string(80, 90, 50, 16, 16, "", RED);
-
-		  for(int i = 0; i < 1024; i++){
-			  //lcd_show_num(120, 150, output_1k[i], 4, 16, RED);
-			  //float32_t* float_num = (float32_t*)adc_float32;
-			  uint32_t adc_x = *(output_1k + i);
-
-			  lcd_show_xnum(80, 150, adc_x, 4, 16, 0, RED);
-			  //lcd_show_xnum(96, 90, temp, 3, 16, 0, RED);
-			  HAL_Delay(100);
-		  }
+		  lcd_show_xnum(30, 150, led0_intensity, 4, 16, 0X80, RED);
+		  lcd_show_xnum(30, 180, led1_intensity, 4, 16, 0X80, RED);
+		  lcd_show_xnum(30, 210, led2_intensity, 4, 16, 0X80, RED);
+	  }
 
 
+//		  lcd_show_string(30, 90, 50, 16, 16, "1K: ", RED);
+//		  lcd_show_string(30, 110, 50, 16, 16, "2K: ", RED);
+//		  lcd_show_string(30, 130, 50, 16, 16, "5K: ", RED);
+		  //lcd_clear(WHITE);
 
-
-		  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc_buffer, SAMPLE_SIZE);
 
     /* USER CODE END WHILE */
 
@@ -278,8 +229,8 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-  RCC_OscInitStruct.PLL.PLLM = 25;
-  RCC_OscInitStruct.PLL.PLLN = 336;
+  RCC_OscInitStruct.PLL.PLLM = 4;
+  RCC_OscInitStruct.PLL.PLLN = 168;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
   RCC_OscInitStruct.PLL.PLLQ = 4;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
@@ -303,83 +254,321 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+	if(htim->Instance == TIM2)
+	{
+		__HAL_TIM_SET_COUNTER(&htim3, 0);	//计时值清零
+		HAL_TIM_Base_Start(&htim3);		//开启16k定时器3
+		HAL_ADC_Start_DMA(&hadc2, (uint32_t*)adc_buffer, SAMPLE_SIZE);	//进行ADCDMA采集
+		HAL_TIM_Base_Stop_IT(&htim2);	//关闭32k定时器中断
+	}
+//	if(htim->Instance == TIM3)
+//	{
+//		HAL_GPIO_TogglePin(SYNC_GPIO_Port, SYNC_Pin);
+//	}
+}
+
+void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
+{
+	if(htim->Instance == TIM1)
+	{
+		switch(capture_state)
+		{
+			case 0 :
+				capture_buffer[0] = HAL_TIM_ReadCapturedValue(&htim1, TIM_CHANNEL_1);	//捕获上升沿
+				__HAL_TIM_SET_CAPTUREPOLARITY(&htim1, TIM_CHANNEL_1, TIM_ICPOLARITY_FALLING);
+				capture_state = 1;
+				break;
+			case 1 :
+				capture_buffer[1] = HAL_TIM_ReadCapturedValue(&htim1, TIM_CHANNEL_1);	//捕获下降沿
+				if(capture_buffer[1] - capture_buffer[0] <= 50)	//高电平时间太短，判定为误判
+				{
+					__HAL_TIM_SET_CAPTUREPOLARITY(&htim1, TIM_CHANNEL_1, TIM_ICPOLARITY_RISING);
+					capture_state = 0;
+				}
+				else
+				{
+					__HAL_TIM_SET_CAPTUREPOLARITY(&htim1, TIM_CHANNEL_1, TIM_ICPOLARITY_RISING);
+					capture_state = 2;
+					HAL_TIM_IC_Stop_IT(&htim1, TIM_CHANNEL_1);	//关闭捕获
+
+//					HAL_TIM_Base_Start(&htim3);		//开启定时器
+					__HAL_TIM_SET_COUNTER(&htim2, 0);	//计时值清零
+					HAL_TIM_Base_Start_IT(&htim2);	//开始32k定时器中断
+//					HAL_ADC_Start_DMA(&hadc2, (uint32_t*)adc_buffer, SAMPLE_SIZE);	//进行ADCDMA采集
+				}
+				break;
+		}
+
+	}
+
+}
+
+void to_logic()
+{
+	for(int i = 0; i < SAMPLE_SIZE; i++)
+	{
+		if(adc_buffer[i] > THRESHOLD)
+		{
+			logic_buffer[i] = 1;
+		}
+		else
+		{
+			logic_buffer[i] = 0;
+		}
+	}
+}
+
+void sync()
+{
+	sync_num = 0;
+	for(int i = 0; i < SAMPLE_SIZE - SYNC_CODE_NUM; i++)
+	{
+		uint8_t sync_score = 0;
+		for(int j = i; j < i + SYNC_CODE_NUM; j++)
+		{
+			if(logic_buffer[j] == sync_code[j - i])
+			{
+				sync_score++;
+			}
+		}
+		if(sync_score >= 8)
+		{
+			sync_index[sync_num] = i;
+			sync_num++;
+		}
+	}
+}
+
+void find_led()
+{
+	for(int i = 0; i < sync_num - 1; i++)	//舍弃最后一个同步头，防止越界
+	{
+		int index = sync_index[i];
+		uint8_t led0_score = 0;
+		uint8_t led1_score = 0;
+		uint8_t led2_score = 0;
+		if(index > -1)
+		{
+			for(int j = index + SYNC_CODE_NUM; j < index + SYNC_CODE_NUM + LED_CODE_NUM; j++)
+			{
+				if(logic_buffer[j] == LED0_code[j - index - SYNC_CODE_NUM])
+				{
+					led0_score++;
+				}
+				if(logic_buffer[j] == LED1_code[j - index - SYNC_CODE_NUM])
+				{
+					led1_score++;
+				}
+				if(logic_buffer[j] == LED2_code[j - index - SYNC_CODE_NUM])
+				{
+					led2_score++;
+				}
+			}
+			if(led0_score >= 8)
+			{
+				led_index[i] = 0;
+			}
+			else if(led1_score >= 8)
+			{
+				led_index[i] = 1;
+			}
+			else if(led2_score >= 8)
+			{
+				led_index[i] = 2;
+			}
+		}
+	}
+}
+
+void get_led_intensity()
+{
+	uint32_t led0_intensity_sum = 0;
+	uint32_t led1_intensity_sum = 0;
+	uint32_t led2_intensity_sum = 0;
+
+	uint16_t led0_num = 0;
+	uint16_t led1_num = 0;
+	uint16_t led2_num = 0;
+
+	for(int i = 0; i < sync_num - 1; i++)	//舍弃最后一个同步头，防止越界
+	{
+		int led = led_index[i];
+		int index = sync_index[i];
+		switch(led)
+		{
+			case 0:
+				for(int j = 1; j < FFH_CODE_NUM; j++)
+				{
+					led0_intensity_sum += adc_buffer[j + index + SYNC_CODE_NUM + LED_CODE_NUM];
+					led0_num++;
+				}
+				break;
+			case 1:
+				for(int j = 1; j < FFH_CODE_NUM; j++)
+				{
+					led1_intensity_sum += adc_buffer[j + index + SYNC_CODE_NUM + LED_CODE_NUM];
+					led1_num++;
+				}
+				break;
+			case 2:
+				for(int j = 1; j < FFH_CODE_NUM; j++)
+				{
+					led2_intensity_sum += adc_buffer[j + index + SYNC_CODE_NUM + LED_CODE_NUM];
+					led2_num++;
+				}
+				break;
+			default :
+
+				break;
+		}
+	}
+	led0_intensity = led0_intensity_sum / led0_num;
+	led1_intensity = led1_intensity_sum / led1_num;
+	led2_intensity = led2_intensity_sum / led2_num;
+}
+
+
+// 光强度转换为距离的函数
+float calculate_distance() {
+    // TODO: 根据实际测试数据实现光强到距离的转换
+	distances[0]= -2E-05f * led0_intensity * led0_intensity + 0.0516f * led0_intensity + 0.2903f;
+	distances[1]= -2E-05f * led1_intensity * led1_intensity + 0.0899f * led1_intensity - 44.861f;
+	distances[2]= -2E-05f * led2_intensity * led2_intensity + 0.0773f * led2_intensity - 26.894f;
+    // 这里需要添加您的转换公式
+
+}
+
+// 三点定位函数
+Point threePoints(float *dis, Point *ps) 
+{
+    Point p = {0,0}; //初始化点为无效值
+    if (dis == NULL || ps == NULL)
+        return p;
+
+    for (int i = 0; i < 3; ++i)
+    {
+        //检查距离是否有问题
+        if (dis[i] < 0)
+            return p;
+
+        for (int j = i + 1; j < 3; ++j) 
+        {
+            //圆心距离PQ
+            float p2p = (float)sqrt((ps[i].x - ps[j].x)*(ps[i].x - ps[j].x) +
+                                    (ps[i].y - ps[j].y)*(ps[i].y - ps[j].y));
+            //判断两圆是否相交
+            if (dis[i] + dis[j] <= p2p) 
+            {
+                //不相交，按比例求
+                p.x += ps[i].x + (ps[j].x - ps[i].x)*dis[i] / (dis[i] + dis[j]);
+                p.y += ps[i].y + (ps[j].y - ps[i].y)*dis[i] / (dis[i] + dis[j]);
+            }
+            else
+            {
+                //相交则套用公式
+                //PC
+                float dr = p2p / 2 + (dis[i] * dis[i] - dis[j] * dis[j]) / (2 * p2p); 
+                //x = xp + (xq-xp) * PC / PQ
+                p.x += ps[i].x + (ps[j].x - ps[i].x)*dr / p2p;
+                //y = yp + (yq-yp) * PC / PQ
+                p.y += ps[i].y + (ps[j].y - ps[i].y)*dr / p2p;
+            }
+        }
+    }
+    
+    //三个圆两两求点，最终得到三个点，求其均值
+    p.x /= 3;
+    p.y /= 3;
+
+    return p;
+}
+
+// 位置计算函数
+void calculate_position(void) {
+    // 计算每个LED的距离
+    
+}
+
 /*
 @param: fft_in: fft变换的输入, 对于本项目应该是滤波器的输出
 @param: mag: 根据fft变换后求得的正弦信号幅值
 @param: freq: 根据fft变换后求得的正弦信号频率
 */
-void fft_process(float32_t* fft_in, float32_t* mag, float32_t* freq) {
-	float32_t fft_out[SAMPLE_SIZE];
-	float32_t magnitude[SAMPLE_SIZE/2];
-	float32_t maxValue = 0.0;
-	uint16_t maxIndex = 0;
-
-	arm_rfft_fast_f32(&fft_instance, fft_in, fft_out, 0);
-	arm_cmplx_mag_f32(fft_out, magnitude, SAMPLE_SIZE/2);
-	maxValue = magnitude[1];
-	maxIndex = 1;
-	for(int i = 2; i < SAMPLE_SIZE/2; i++) {
-		if(magnitude[i] > maxValue) {
-			maxValue = magnitude[i];
-			maxIndex = i;
-		}
-	}
-	*mag = (maxValue * 2.0 / SAMPLE_SIZE) * 3.3f / 4096.0f;
-	*freq = (float32_t)maxIndex * SAMPLE_RATE / SAMPLE_SIZE;
-}
-
-void filter_test() {
-	float32_t input_signal[SAMPLE_SIZE];
-	float32_t out_1k[SAMPLE_SIZE];
-	float32_t out_2k[SAMPLE_SIZE];
-	float32_t out_5k[SAMPLE_SIZE];
-
-	float32_t mag1k = 0.0;
-	float32_t freq1k = 0.0;
-	float32_t mag2k = 0.0;
-	float32_t freq2k = 0.0;
-	float32_t mag5k = 0.0;
-	float32_t freq5k = 0.0;
-
-	//生成合成信号
-	for(int i = 0; i < SAMPLE_SIZE; i++) {
-		float t = (float)i / SAMPLE_RATE;
-
-		float pwm1k = (fmodf(t * 1000.0f, 1.0f) < 0.5) ? 1.0f : 0.0f;
-		float pwm2k = (fmodf(t * 2000.0f, 1.0f) < 0.5) ? 1.0f : 0.0f;
-		float pwm5k = (fmodf(t * 5000.0f, 1.0f) < 0.5) ? 1.0f : 0.0f;
-		input_signal[i] = (uint16_t)((pwm1k + pwm2k + pwm5k) * 4096.f / 3.3f);
-	}
-
-	arm_biquad_cascade_df1_f32(&S_1k, input_signal, out_1k, SAMPLE_SIZE);
-	arm_biquad_cascade_df1_f32(&S_2k, input_signal, out_2k, SAMPLE_SIZE);
-	arm_biquad_cascade_df1_f32(&S_5k, input_signal, out_5k, SAMPLE_SIZE);
-
-	fft_process(out_1k, &mag1k, &freq1k);
-	fft_process(out_2k, &mag2k, &freq2k);
-	fft_process(out_5k, &mag5k, &freq5k);
-
-	char mag1k_str[10];
-	char freq1k_str[10];
-	char mag2k_str[10];
-	char freq2k_str[10];
-	char mag5k_str[10];
-	char freq5k_str[10];
-
-	sprintf(mag1k_str, "%.3f", mag1k);
-	sprintf(freq1k_str, "%.3f", freq1k);
-	sprintf(mag2k_str, "%.3f", mag2k);
-	sprintf(freq2k_str, "%.3f", freq2k);
-	sprintf(mag5k_str, "%.3f", mag5k);
-	sprintf(freq5k_str, "%.3f", freq5k);
-
-	lcd_show_string(30, 150, 200, 16, 16, mag1k_str, BLUE);
-	lcd_show_string(30, 170, 200, 16, 16, freq1k_str, BLUE);
-	lcd_show_string(30, 190, 200, 16, 16, mag2k_str, BLUE);
-	lcd_show_string(30, 210, 200, 16, 16, freq2k_str, BLUE);
-	lcd_show_string(30, 230, 200, 16, 16, mag5k_str, BLUE);
-	lcd_show_string(30, 250, 200, 16, 16, freq5k_str, BLUE);
-}
+//void fft_process(float32_t* fft_in, float32_t* mag, float32_t* freq) {
+//	float32_t fft_out[SAMPLE_SIZE];
+//	float32_t magnitude[SAMPLE_SIZE/2];
+//	float32_t maxValue = 0.0;
+//	uint16_t maxIndex = 0;
+//
+//	arm_rfft_fast_f32(&fft_instance, fft_in, fft_out, 0);
+//	arm_cmplx_mag_f32(fft_out, magnitude, SAMPLE_SIZE/2);
+//	maxValue = magnitude[1];
+//	maxIndex = 1;
+//	for(int i = 2; i < SAMPLE_SIZE/2; i++) {
+//		if(magnitude[i] > maxValue) {
+//			maxValue = magnitude[i];
+//			maxIndex = i;
+//		}
+//	}
+//	*mag = (maxValue * 2.0 / SAMPLE_SIZE) * 3.3f / 4096.0f;
+//	*freq = (float32_t)maxIndex * SAMPLE_RATE / SAMPLE_SIZE;
+//}
+//
+//void filter_test() {
+//	float32_t input_signal[SAMPLE_SIZE];
+//	float32_t out_1k[SAMPLE_SIZE];
+//	float32_t out_2k[SAMPLE_SIZE];
+//	float32_t out_5k[SAMPLE_SIZE];
+//
+//	float32_t mag1k = 0.0;
+//	float32_t freq1k = 0.0;
+//	float32_t mag2k = 0.0;
+//	float32_t freq2k = 0.0;
+//	float32_t mag5k = 0.0;
+//	float32_t freq5k = 0.0;
+//
+//	//生成合成信号
+//	for(int i = 0; i < SAMPLE_SIZE; i++) {
+//		float t = (float)i / SAMPLE_RATE;
+//
+//		float pwm1k = (fmodf(t * 1000.0f, 1.0f) < 0.5) ? 1.0f : 0.0f;
+//		float pwm2k = (fmodf(t * 2000.0f, 1.0f) < 0.5) ? 1.0f : 0.0f;
+//		float pwm5k = (fmodf(t * 5000.0f, 1.0f) < 0.5) ? 1.0f : 0.0f;
+//		input_signal[i] = (uint16_t)((pwm1k + pwm2k + pwm5k) * 4096.f / 3.3f);
+//	}
+//
+//	arm_biquad_cascade_df1_f32(&S_1k, input_signal, out_1k, SAMPLE_SIZE);
+//	arm_biquad_cascade_df1_f32(&S_2k, input_signal, out_2k, SAMPLE_SIZE);
+//	arm_biquad_cascade_df1_f32(&S_5k, input_signal, out_5k, SAMPLE_SIZE);
+//
+//	fft_process(out_1k, &mag1k, &freq1k);
+//	fft_process(out_2k, &mag2k, &freq2k);
+//	fft_process(out_5k, &mag5k, &freq5k);
+//
+//	char mag1k_str[10];
+//	char freq1k_str[10];
+//	char mag2k_str[10];
+//	char freq2k_str[10];
+//	char mag5k_str[10];
+//	char freq5k_str[10];
+//
+//	sprintf(mag1k_str, "%.3f", mag1k);
+//	sprintf(freq1k_str, "%.3f", freq1k);
+//	sprintf(mag2k_str, "%.3f", mag2k);
+//	sprintf(freq2k_str, "%.3f", freq2k);
+//	sprintf(mag5k_str, "%.3f", mag5k);
+//	sprintf(freq5k_str, "%.3f", freq5k);
+//
+//	lcd_show_string(30, 150, 200, 16, 16, mag1k_str, BLUE);
+//	lcd_show_string(30, 170, 200, 16, 16, freq1k_str, BLUE);
+//	lcd_show_string(30, 190, 200, 16, 16, mag2k_str, BLUE);
+//	lcd_show_string(30, 210, 200, 16, 16, freq2k_str, BLUE);
+//	lcd_show_string(30, 230, 200, 16, 16, mag5k_str, BLUE);
+//	lcd_show_string(30, 250, 200, 16, 16, freq5k_str, BLUE);
+//}
 /* USER CODE END 4 */
 
 /**

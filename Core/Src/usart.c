@@ -21,7 +21,29 @@
 #include "usart.h"
 
 /* USER CODE BEGIN 0 */
+#ifdef __GNUC__
+#define PUTCHAR_PROTOTYPE int __io_putchar(int ch)
+#else
+#define PUTCHAR_PROTOTYPE int fputc(int ch, FILE *f)
+#endif
 
+PUTCHAR_PROTOTYPE
+{
+	HAL_UART_Transmit(&huart1, (uint8_t*)&ch, 1, HAL_MAX_DELAY);
+	return ch;
+}
+
+/* 锟斤拷锟秸伙拷锟斤拷, 锟斤拷锟経SART_REC_LEN锟斤拷锟街斤拷. */
+uint8_t g_usart_rx_buf[USART_REC_LEN];
+
+/*  锟斤拷锟斤拷状态
+ *  bit15锟斤拷      锟斤拷锟斤拷锟斤拷杀锟街�
+ *  bit14锟斤拷      锟斤拷锟秸碉拷0x0d
+ *  bit13~0锟斤拷    锟斤拷锟秸碉拷锟斤拷锟斤拷效锟街斤拷锟斤拷目
+*/
+uint16_t g_usart_rx_sta = 0;
+
+uint8_t g_rx_buffer[RXBUFFERSIZE];  /* HAL锟斤拷使锟矫的达拷锟节斤拷锟秸伙拷锟斤拷 */
 /* USER CODE END 0 */
 
 UART_HandleTypeDef huart1;
@@ -110,5 +132,47 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef* uartHandle)
 }
 
 /* USER CODE BEGIN 1 */
+/**
+ * @brief       锟斤拷锟斤拷锟斤拷锟捷斤拷锟秸回碉拷锟斤拷锟斤拷
+                锟斤拷锟捷达拷锟斤拷锟斤拷锟斤拷锟斤拷锟斤拷锟�
+ * @param       huart:锟斤拷锟节撅拷锟�
+ * @retval      锟斤拷
+ */
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if (huart->Instance == USART1)                      /* 锟斤拷锟斤拷谴锟斤拷锟�1 */
+    {
+        if ((g_usart_rx_sta & 0x8000) == 0)             /* 锟斤拷锟斤拷未锟斤拷锟� */
+        {
+            if (g_usart_rx_sta & 0x4000)                /* 锟斤拷锟秸碉拷锟斤拷0x0d锟斤拷锟斤拷锟截筹拷锟斤拷锟斤拷 */
+            {
+                if (g_rx_buffer[0] != 0x0a)             /* 锟斤拷锟秸碉拷锟侥诧拷锟斤拷0x0a锟斤拷锟斤拷锟斤拷锟角伙拷锟叫硷拷锟斤拷 */
+                {
+                    g_usart_rx_sta = 0;                 /* 锟斤拷锟秸达拷锟斤拷,锟斤拷锟铰匡拷始 */
+                }
+                else                                    /* 锟斤拷锟秸碉拷锟斤拷锟斤拷0x0a锟斤拷锟斤拷锟斤拷锟叫硷拷锟斤拷 */
+                {
+                    g_usart_rx_sta |= 0x8000;           /* 锟斤拷锟斤拷锟斤拷锟斤拷锟� */
+                }
+            }
+            else                                        /* 锟斤拷没锟秸碉拷0X0d锟斤拷锟斤拷锟截筹拷锟斤拷锟斤拷 */
+            {
+                if (g_rx_buffer[0] == 0x0d)
+                    g_usart_rx_sta |= 0x4000;
+                else
+                {
+                    g_usart_rx_buf[g_usart_rx_sta & 0X3FFF] = g_rx_buffer[0];
+                    g_usart_rx_sta++;
 
+                    if (g_usart_rx_sta > (USART_REC_LEN - 1))
+                    {
+                        g_usart_rx_sta = 0;             /* 锟斤拷锟斤拷锟斤拷锟捷达拷锟斤拷,锟斤拷锟铰匡拷始锟斤拷锟斤拷 */
+                    }
+                }
+            }
+        }
+
+        HAL_UART_Receive_IT(&huart1, (uint8_t *)g_rx_buffer, RXBUFFERSIZE);
+    }
+}
 /* USER CODE END 1 */
