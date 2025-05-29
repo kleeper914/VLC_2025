@@ -40,13 +40,14 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define SAMPLE_SIZE 360 * 20	//采样点
+#define SAMPLE_SIZE 480 * 20	//采样点
 #define SAMPLE_RATE 16000	//采样率
 #define PI 			3.14159265359f
 #define SYNC_CODE_NUM 8
 #define THRESHOLD 1800
 #define LED_CODE_NUM 8
 #define FFH_CODE_NUM 8
+#define LED_MESSAGE_NUM 8	//LED消息长度
 #define SYNC_NUM_MAX 15 * 20
 /* USER CODE END PD */
 
@@ -68,15 +69,15 @@ uint16_t capture_buffer[2];			//输入捕获值
 uint8_t capture_state = 0;			//0为上升沿捕获，1为下降沿捕获
 
 uint8_t logic_buffer[SAMPLE_SIZE];	//逻辑数据缓冲区，1或0
-uint16_t sync_code[SYNC_CODE_NUM] = {1,0,1,0,1,0,1,0};
-uint16_t LED0_code[LED_CODE_NUM] = {0,0,0,0,1,0,1,0};
+uint16_t sync_code[SYNC_CODE_NUM] = {1,1,1,0,1,0,1,0};
+uint16_t LED0_code[LED_CODE_NUM] = {0,0,0,0,1,0,1,0};	//10
 uint16_t LED1_code[LED_CODE_NUM] = {0,0,1,0,1,1,0,1};
 uint16_t LED2_code[LED_CODE_NUM] = {0,0,0,1,1,0,0,1};
 uint16_t FFH[FFH_CODE_NUM] = {1,1,1,1,1,1,1,1};
 
-int sync_index[SYNC_NUM_MAX] = {-1};	//存放同步头的索引值
+int sync_index[SYNC_NUM_MAX];	//存放同步头的索引值
 uint8_t sync_num = 0;	//同步头个数
-int led_index[SYNC_NUM_MAX] = {-1};		//存放对应同步头索引值的led类型，0为led0，1为led1，2为led2，-1为无
+int led_index[SYNC_NUM_MAX];		//存放对应同步头索引值的led类型，0为led0，1为led1，2为led2，-1为无
 
 //存放led对应的光强值
 uint32_t led0_intensity = 0;
@@ -88,6 +89,11 @@ Point led_locations[3] = {{0, 10}, {-10, 0}, {10, 0}};	//led0在(0, 10)，led1�
 
 //存放PD位置
 Point PDlocation = {-1, -1};	//初始化为无效值
+
+//存放led消息
+uint8_t led0_message = 0;
+uint8_t led1_message = 0;
+uint8_t led2_message = 0;
 
 /* USER CODE END PV */
 
@@ -146,6 +152,12 @@ int main(void)
 //  lcd_show_string(30, 90, 50, 16, 16, "1K: ", RED);
 //  lcd_show_string(30, 110, 50, 16, 16, "2K: ", RED);
 //  lcd_show_string(30, 130, 50, 16, 16, "5K: ", RED);
+	//初始化同步索引与led索引数组为全-1
+	for(int i = 0; i < SYNC_NUM_MAX; i++)
+  	{
+		sync_index[i] = -1;
+		led_index[i] = -1;
+  	}
 
   //filter_test();
   /* USER CODE END 2 */
@@ -165,23 +177,34 @@ int main(void)
 		  sync();
 		  find_led();
 		  get_led_intensity();
+		  get_led_message();
 		  get_location();	//获取PD位置
+		  HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1);
+		  HAL_GPIO_TogglePin(LED_B_GPIO_Port, LED_B_Pin);
+
 		  char string_x[30];
 		  char string_y[30];
 		  sprintf(string_x, "x: %.3f", PDlocation.x);
 		  sprintf(string_y, "y: %.3f", PDlocation.y);
-		  HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1);
-		  HAL_GPIO_TogglePin(LED_B_GPIO_Port, LED_B_Pin);
+		  char led0_message_str[30];
+		  char led1_message_str[30];
+		  char led2_message_str[30];
+		  sprintf(led0_message_str, "LED0: %d", led0_message);
+		  sprintf(led1_message_str, "LED1: %X", led1_message);
+		  sprintf(led2_message_str, "LED2: %d", led2_message);
 		  lcd_clear(WHITE);
-		  lcd_show_xnum(30, 150, led0_intensity, 4, 16, 0X80, RED);
-		  lcd_show_xnum(30, 180, led1_intensity, 4, 16, 0X80, RED);
-		  lcd_show_xnum(30, 210, led2_intensity, 4, 16, 0X80, RED);
+		  lcd_show_xnum(30, 30, led0_intensity, 4, 16, 0X80, RED);
+		  lcd_show_xnum(110, 30, led1_intensity, 4, 16, 0X80, RED);
+		  lcd_show_xnum(190, 30, led2_intensity, 4, 16, 0X80, RED);
 //		  lcd_show_xnum(30, 240, x, 4, 16, 0X00, RED);
 //		  lcd_show_xnum(60, 240, x_small, 4, 16, 0X00, RED);
 //		  lcd_show_xnum(30, 270, y, 4, 16, 0X00, RED);
 //		  lcd_show_xnum(60, 270, y_small, 4, 16, 0X00, RED);
-		  lcd_show_string(30, 240, 200, 32, 32, string_x, BLUE);
-		  lcd_show_string(30, 270, 200, 32, 32, string_y, BLUE);
+		  lcd_show_string(60, 60, 200, 32, 32, string_x, BLUE);
+		  lcd_show_string(60, 90, 200, 32, 32, string_y, BLUE);
+		  lcd_show_string(60, 150, 200, 32, 32, led0_message_str, DARKBLUE);
+		  lcd_show_string(60, 180, 200, 32, 32, led1_message_str, DARKBLUE);
+		  lcd_show_string(60, 210, 200, 32, 32, led2_message_str, DARKBLUE);
 	  }
 
 
@@ -418,6 +441,46 @@ void get_led_intensity()
 	led0_intensity = (led0_num > 0 && led0_intensity_sum > 0) ? led0_intensity_sum / led0_num : led0_intensity;	//避免除数为0
 	led1_intensity = (led1_num > 0 && led1_intensity_sum > 0) ? led1_intensity_sum / led1_num : led1_intensity;
 	led2_intensity = (led2_num > 0 && led2_intensity_sum > 0) ? led2_intensity_sum / led2_num : led2_intensity;
+}
+
+void get_led_message()
+{
+
+	for(int i = 0; i < sync_num - 5; i++)	//舍弃最后几个同步头，防止越界
+	{
+		int led = led_index[i];
+		int index = sync_index[i];
+		switch(led)
+		{
+			case 0:
+				led0_message = 0;
+				for(int j = 0; j < LED_MESSAGE_NUM; j++)
+				{
+					uint8_t logic = logic_buffer[j + index + SYNC_CODE_NUM + LED_CODE_NUM + FFH_CODE_NUM];
+					led0_message |= (logic << (LED_MESSAGE_NUM - 1 - j));	//将逻辑值转换为二进制消息
+				}
+				break;
+			case 1:
+				led1_message = 0;
+				for(int j = 0; j < LED_MESSAGE_NUM; j++)
+				{
+					uint8_t logic = logic_buffer[j + index + SYNC_CODE_NUM + LED_CODE_NUM + FFH_CODE_NUM];
+					led1_message |= (logic << (LED_MESSAGE_NUM - 1 - j));	//将逻辑值转换为二进制消息
+				}
+				break;
+			case 2:
+				led2_message = 0;
+				for(int j = 0; j < LED_MESSAGE_NUM; j++)
+				{
+					uint8_t logic = logic_buffer[j + index + SYNC_CODE_NUM + LED_CODE_NUM + FFH_CODE_NUM];
+					led2_message |= (logic << (LED_MESSAGE_NUM - 1 - j));	//将逻辑值转换为二进制消息
+				}
+				break;
+			default :
+
+				break;
+		}
+	}
 }
 
 void get_location()
