@@ -427,9 +427,69 @@ void get_location()
 	float led1_radius = 0.0f;
 	float led2_radius = 0.0f;
 
-	led0_radius = -8.258245051149834e-11*led0_intensity*led0_intensity*led0_intensity*led0_intensity+8.603303598173248e-7*led0_intensity*led0_intensity*led0_intensity-0.003343692130742398*led0_intensity*led0_intensity+5.716859893344553*led0_intensity-3581.1780710049975;	//根据实验数据拟合的函数
-	led1_radius = -3.5960151839135584e-10*led1_intensity*led1_intensity*led1_intensity*led1_intensity+0.000003851077174734846*led1_intensity*led1_intensity*led1_intensity-0.015389238714354235*led1_intensity*led1_intensity+27.158329518946147*led1_intensity-17805.994712478332;
-	led2_radius =  -5.040206617568613e-11*led2_intensity*led2_intensity*led2_intensity*led2_intensity+4.751187260064662e-7*led2_intensity*led2_intensity*led2_intensity-0.0016747497267775738*led2_intensity*led2_intensity+2.58985725128424*led2_intensity-1435.2323446989374;
+//	led0_radius = -8.258245051149834e-11*led0_intensity*led0_intensity*led0_intensity*led0_intensity+8.603303598173248e-7*led0_intensity*led0_intensity*led0_intensity-0.003343692130742398*led0_intensity*led0_intensity+5.716859893344553*led0_intensity-3581.1780710049975;	//根据实验数据拟合的函数
+//	led1_radius = -3.5960151839135584e-10*led1_intensity*led1_intensity*led1_intensity*led1_intensity+0.000003851077174734846*led1_intensity*led1_intensity*led1_intensity-0.015389238714354235*led1_intensity*led1_intensity+27.158329518946147*led1_intensity-17805.994712478332;
+//	led2_radius =  -5.040206617568613e-11*led2_intensity*led2_intensity*led2_intensity*led2_intensity+4.751187260064662e-7*led2_intensity*led2_intensity*led2_intensity-0.0016747497267775738*led2_intensity*led2_intensity+2.58985725128424*led2_intensity-1435.2323446989374;
+
+	if(led0_intensity <= 3325 && led0_intensity >= 3300){
+		led0_radius = -0.2*led0_intensity+665;
+	}else if(led0_intensity <= 3300 && led0_intensity >= 3200){
+		led0_radius = -0.05*led0_intensity+170;
+	}else if(led0_intensity <= 3200 && led0_intensity >= 3075){
+		led0_radius = -0.04*led0_intensity+138;
+	}else if(led0_intensity <= 3075 && led0_intensity >= 2900){
+		led0_radius = -0.0286*led0_intensity+102.8571;
+	}else if(led0_intensity <= 2900 && led0_intensity >= 2730){
+		led0_radius = -0.0294*led0_intensity+105.2941;
+	}else if(led0_intensity <= 2730 && led0_intensity >= 2560){
+		led0_radius = -0.0294*led0_intensity+105.2941;
+	}else if(led0_intensity <= 2560 && led0_intensity >= 2360){
+		led0_radius = -0.025*led0_intensity+94;
+	}else if(led0_intensity <= 2360){
+		led0_radius = -0.025*led0_intensity+94;
+	}else{
+		led0_radius = 1;
+	}
+
+	if(led1_intensity <= 3270 && led1_intensity >= 3210){
+			led1_radius = -0.0833*led1_intensity+272.5;
+		}else if(led1_intensity <= 3210 && led1_intensity >= 3150){
+			led1_radius = -0.0833*led1_intensity+272.5;
+		}else if(led1_intensity <= 3150 && led1_intensity >= 3030){
+			led1_radius = -0.0417*led1_intensity+141.25;
+		}else if(led1_intensity <= 3030 && led1_intensity >= 2890){
+			led1_radius = -0.0357*led1_intensity+123.2143;
+		}else if(led1_intensity <= 2890 && led1_intensity >= 2740){
+			led1_radius = -0.0333*led1_intensity+116.3333;
+		}else if(led1_intensity <= 2740 && led1_intensity >= 2530){
+			led1_radius = -0.0238*led1_intensity+90.2381;
+		}else if(led1_intensity <= 2530 && led1_intensity >= 2330){
+			led1_radius = -0.025*led1_intensity+93.25;
+		}else if(led1_intensity <= 2330){
+			led1_radius = -0.0312*led1_intensity+107.8125;
+		}else{
+			led1_radius = 1;
+		}
+
+	if(led2_intensity <= 3260 && led2_intensity >= 3220){
+			led2_radius = -0.125*led2_intensity+407.5;
+		}else if(led2_intensity <= 3220 && led2_intensity >= 3120){
+			led2_radius = -0.05*led2_intensity+166;
+		}else if(led2_intensity <= 3120 && led2_intensity >= 2990){
+			led2_radius = -0.0385*led2_intensity+130;
+		}else if(led2_intensity <= 2990 && led2_intensity >= 2835){
+			led2_radius = -0.0323*led2_intensity+111.4516;
+		}else if(led2_intensity <= 2835 && led2_intensity >= 2660){
+			led2_radius = -0.0286*led2_intensity+101;
+		}else if(led2_intensity <= 2660 && led2_intensity >= 2475){
+			led2_radius = -0.0270*led2_intensity+96.8919;
+		}else if(led2_intensity <= 2475 && led2_intensity >= 2275){
+			led2_radius = -0.025*led2_intensity+91.875;
+		}else if(led2_intensity <= 2275){
+			led2_radius =  -0.0225*led2_intensity+86.2387;
+		}else{
+			led2_radius = 1;
+		}
 
 	float distances[3] = {led0_radius > 0 ? led0_radius : 1, led1_radius > 0 ? led1_radius : 1, led2_radius > 0 ? led2_radius : 1};	//存放距离
 
