@@ -30,6 +30,7 @@
 #include "../../Drivers/BSP/LCD/lcd.h"
 #include "arm_math.h"
 #include "../../Drivers/BSP/RSS/rss.h"	//三点定位法
+#include "../../Drivers/BSP/BEEP/beep.h"
 
 /* USER CODE END Includes */
 
@@ -49,6 +50,9 @@
 #define FFH_CODE_NUM 8
 #define LED_MESSAGE_NUM 8	//LED消息长度
 #define SYNC_NUM_MAX 15 * 20
+
+#define SOUND_FLAG	A	//接收到LED1的数据为A时进入接收音频信息状态
+#define TONE_MAX_NUM   100	//音频信息缓冲区大小
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -95,6 +99,11 @@ uint8_t led0_message = 0;
 uint8_t led1_message = 0;
 uint8_t led2_message = 0;
 
+//存放音频的音调和节拍信息
+float tones[TONE_MAX_NUM];
+uint8_t beats[TONE_MAX_NUM];
+uint8_t tone_index = 0;
+uint8_t is_recording = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -143,6 +152,7 @@ int main(void)
   MX_TIM1_Init();
   MX_TIM2_Init();
   MX_ADC2_Init();
+  MX_TIM4_Init();
   /* USER CODE BEGIN 2 */
   //HAL_TIM_Base_Start_IT(&htim6);
   lcd_init();
@@ -177,7 +187,9 @@ int main(void)
 		  sync();
 		  find_led();
 		  get_led_intensity();
+
 		  get_led_message();
+
 		  get_location();	//获取PD位置
 		  HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1);
 		  HAL_GPIO_TogglePin(LED_B_GPIO_Port, LED_B_Pin);
@@ -196,10 +208,10 @@ int main(void)
 		  lcd_show_xnum(30, 30, led0_intensity, 4, 16, 0X80, RED);
 		  lcd_show_xnum(110, 30, led1_intensity, 4, 16, 0X80, RED);
 		  lcd_show_xnum(190, 30, led2_intensity, 4, 16, 0X80, RED);
-//		  lcd_show_xnum(30, 240, x, 4, 16, 0X00, RED);
-//		  lcd_show_xnum(60, 240, x_small, 4, 16, 0X00, RED);
-//		  lcd_show_xnum(30, 270, y, 4, 16, 0X00, RED);
-//		  lcd_show_xnum(60, 270, y_small, 4, 16, 0X00, RED);
+	//		  lcd_show_xnum(30, 240, x, 4, 16, 0X00, RED);
+	//		  lcd_show_xnum(60, 240, x_small, 4, 16, 0X00, RED);
+	//		  lcd_show_xnum(30, 270, y, 4, 16, 0X00, RED);
+	//		  lcd_show_xnum(60, 270, y_small, 4, 16, 0X00, RED);
 		  lcd_show_string(60, 60, 200, 32, 32, string_x, BLUE);
 		  lcd_show_string(60, 90, 200, 32, 32, string_y, BLUE);
 		  lcd_show_string(60, 150, 200, 32, 32, led0_message_str, DARKBLUE);
@@ -558,83 +570,7 @@ void get_location()
 
 	PDlocation = getPDlocation(distances, led_locations);	//调用三点定位法获取PD位置
 }
-/*
-@param: fft_in: fft变换的输入, 对于本项目应该是滤波器的输出
-@param: mag: 根据fft变换后求得的正弦信号幅值
-@param: freq: 根据fft变换后求得的正弦信号频率
-*/
-//void fft_process(float32_t* fft_in, float32_t* mag, float32_t* freq) {
-//	float32_t fft_out[SAMPLE_SIZE];
-//	float32_t magnitude[SAMPLE_SIZE/2];
-//	float32_t maled0_intensityValue = 0.0;
-//	uint16_t maxIndex = 0;
-//
-//	arm_rfft_fast_f32(&fft_instance, fft_in, fft_out, 0);
-//	arm_cmplx_mag_f32(fft_out, magnitude, SAMPLE_SIZE/2);
-//	maxValue = magnitude[1];
-//	maxIndex = 1;
-//	for(int i = 2; i < SAMPLE_SIZE/2; i++) {
-//		if(magnitude[i] > maxValue) {
-//			maxValue = magnitude[i];
-//			maxIndex = i;
-//		}
-//	}
-//	*mag = (maxValue * 2.0 / SAMPLE_SIZE) * 3.3f / 4096.0f;
-//	*freq = (float32_t)maxIndex * SAMPLE_RATE / SAMPLE_SIZE;
-//}
-//
-//void filter_test() {
-//	float32_t input_signal[SAMPLE_SIZE];
-//	float32_t out_1k[SAMPLE_SIZE];
-//	float32_t out_2k[SAMPLE_SIZE];
-//	float32_t out_5k[SAMPLE_SIZE];
-//
-//	float32_t mag1k = 0.0;
-//	float32_t freq1k = 0.0;
-//	float32_t mag2k = 0.0;
-//	float32_t freq2k = 0.0;
-//	float32_t mag5k = 0.0;
-//	float32_t freq5k = 0.0;
-//
-//	//生成合成信号
-//	for(int i = 0; i < SAMPLE_SIZE; i++) {
-//		float t = (float)i / SAMPLE_RATE;
-//
-//		float pwm1k = (fmodf(t * 1000.0f, 1.0f) < 0.5) ? 1.0f : 0.0f;
-//		float pwm2k = (fmodf(t * 2000.0f, 1.0f) < 0.5) ? 1.0f : 0.0f;
-//		float pwm5k = (fmodf(t * 5000.0f, 1.0f) < 0.5) ? 1.0f : 0.0f;
-//		input_signal[i] = (uint16_t)((pwm1k + pwm2k + pwm5k) * 4096.f / 3.3f);
-//	}
-//
-//	arm_biquad_cascade_df1_f32(&S_1k, input_signal, out_1k, SAMPLE_SIZE);
-//	arm_biquad_cascade_df1_f32(&S_2k, input_signal, out_2k, SAMPLE_SIZE);
-//	arm_biquad_cascade_df1_f32(&S_5k, input_signal, out_5k, SAMPLE_SIZE);
-//
-//	fft_process(out_1k, &mag1k, &freq1k);
-//	fft_process(out_2k, &mag2k, &freq2k);
-//	fft_process(out_5k, &mag5k, &freq5k);
-//
-//	char mag1k_str[10];
-//	char freq1k_str[10];
-//	char mag2k_str[10];
-//	char freq2k_str[10];
-//	char mag5k_str[10];
-//	char freq5k_str[10];
-//
-//	sprintf(mag1k_str, "%.3f", mag1k);
-//	sprintf(freq1k_str, "%.3f", freq1k);
-//	sprintf(mag2k_str, "%.3f", mag2k);
-//	sprintf(freq2k_str, "%.3f", freq2k);
-//	sprintf(mag5k_str, "%.3f", mag5k);
-//	sprintf(freq5k_str, "%.3f", freq5k);
-//
-//	lcd_show_string(30, 150, 200, 16, 16, mag1k_str, BLUE);
-//	lcd_show_string(30, 170, 200, 16, 16, freq1k_str, BLUE);
-//	lcd_show_string(30, 190, 200, 16, 16, mag2k_str, BLUE);
-//	lcd_show_string(30, 210, 200, 16, 16, freq2k_str, BLUE);
-//	lcd_show_string(30, 230, 200, 16, 16, mag5k_str, BLUE);
-//	lcd_show_string(30, 250, 200, 16, 16, freq5k_str, BLUE);
-//}
+
 /* USER CODE END 4 */
 
 /**
