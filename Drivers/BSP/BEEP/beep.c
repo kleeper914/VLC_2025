@@ -25,12 +25,15 @@ extern int sync_index[SYNC_NUM_MAX];
 extern uint8_t sync_num;
 extern int led_index[SYNC_NUM_MAX];
 
-extern float tones[TONE_MAX_NUM];	//音调, 范围为tone_frequency中的7个音阶
+extern float tones[TONE_MAX_NUM];	//音调, 范围为tone_frequency中的14个音阶
 extern uint8_t beats[TONE_MAX_NUM];	//节拍, 两只老虎乐谱中最短为1/4拍为250ms, 将其定为1, 1/2拍为2, 1拍为4
 extern uint8_t tone_index;
 extern uint8_t is_recording;
 
-const float tone_frequency[7] = {
+const float tone_frequency[14] = {
+		//低音
+		//1      2        3        4        5        6     7
+		261.63,  293.67,  329.63,  349.23,  391.99,  440,  493.88,
 		//中音
 		//1      2        3        4        5        6     7
 		532.25,  587.33,  659.25,  698.46,  783.99,  880,  987.76
@@ -60,7 +63,6 @@ void get_music() {
 				//提取音调和节拍信息
 				float tone = tone_frequency[ (led_message >> 4) & 0x0F ];	//高4位音调信息
 				uint8_t beat = led_message & 0x0F;		//低4位节拍信息
-
 				if(tone_index < TONE_MAX_NUM) {
 					tones[tone_index] = tone;
 					beats[tone_index] = beat;

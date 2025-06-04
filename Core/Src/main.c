@@ -31,6 +31,7 @@
 #include "arm_math.h"
 #include "../../Drivers/BSP/RSS/rss.h"	//三点定位法
 #include "../../Drivers/BSP/BEEP/beep.h"
+#include "../../Drivers/BSP/KEY/key.h"
 
 /* USER CODE END Includes */
 
@@ -104,6 +105,8 @@ float tones[TONE_MAX_NUM];
 uint8_t beats[TONE_MAX_NUM];
 uint8_t tone_index = 0;
 uint8_t is_recording = 0;
+
+volatile uint8_t message_mode = 0;	//接收的led_message内容 0-矩阵按键	1-乐谱信息
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -176,6 +179,9 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  if(key_scan()) {
+		  message_mode = (message_mode + 1) % 2;
+	  }
 	  if(capture_state == 2 && AdcConvEnd)	//检测buffer是否填满
 	  {
 		  AdcConvEnd = 0;
@@ -188,7 +194,13 @@ int main(void)
 		  find_led();
 		  get_led_intensity();
 
-		  get_led_message();
+		  if(message_mode) {
+			  get_music();	//获取乐谱信息
+			  play_music();	//这里写的不够健壮,应该先判断是否接收到预设的完整乐谱再播放,可以先测试一下
+		  }
+		  else {
+			  get_led_message();
+		  }
 
 		  get_location();	//获取PD位置
 		  HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1);
