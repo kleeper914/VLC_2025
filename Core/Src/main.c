@@ -107,6 +107,7 @@ uint8_t tone_index = 0;
 uint8_t is_recording = 0;
 
 volatile uint8_t message_mode = 0;	//接收的led_message内容 0-矩阵按键	1-乐谱信息
+uint8_t debounce_count = 0;	//消抖用
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -156,6 +157,7 @@ int main(void)
   MX_TIM2_Init();
   MX_ADC2_Init();
   MX_TIM4_Init();
+  MX_TIM5_Init();
   /* USER CODE BEGIN 2 */
   //HAL_TIM_Base_Start_IT(&htim6);
   lcd_init();
@@ -181,6 +183,7 @@ int main(void)
   {
 	  if(key_scan()) {
 		  message_mode = (message_mode + 1) % 2;
+		  HAL_GPIO_TogglePin(LED_G_GPIO_Port, LED_G_Pin);
 	  }
 	  if(capture_state == 2 && AdcConvEnd)	//检测buffer是否填满
 	  {
@@ -305,6 +308,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 //	{
 //		HAL_GPIO_TogglePin(SYNC_GPIO_Port, SYNC_Pin);
 //	}
+	if(htim->Instance == TIM5)
+	{
+		debounce_count++;	//每1ms自增一次
+	}
 }
 
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)

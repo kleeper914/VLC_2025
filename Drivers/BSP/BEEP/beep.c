@@ -80,8 +80,10 @@ void play_music() {
 		delay_time = beats[i] * 250;
 
 		tone = (uint32_t)84*1000*1000 / tones[i];
-		TIM4->ARR = tone;	//改变频率
-		TIM4->CCR1 = tone / 2;	//占空比为50%
+		//TIM4->ARR = tone;	//改变频率
+		__HAL_TIM_SET_AUTORELOAD(&htim4, tone);
+//		TIM4->CCR1 = tone / 2;	//占空比为50%
+		__HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_1, tone / 2);
 		HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
 		HAL_Delay(delay_time);	//节拍延时
 		HAL_TIM_PWM_Stop(&htim4, TIM_CHANNEL_1);

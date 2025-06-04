@@ -21,8 +21,12 @@ uint8_t key_scan() {
 	case KEY_DEBOUNCE:
 		if(key_val == KEY_PRESSED) {
 			if(debounce_count >= DEBOUNCE_TIME) {
-				key_state = KEY_PRESSED;
+				key_state = KEY_PRESSED_OK;
 				key_event = 1;	//检测到按键按下
+				HAL_TIM_Base_Stop_IT(&htim5);
+			}
+			else {
+				HAL_TIM_Base_Start_IT(&htim5);
 			}
 		}
 		else {
