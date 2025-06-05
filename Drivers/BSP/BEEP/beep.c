@@ -10,15 +10,15 @@
 
 #define LED_NUM 3
 #define SAMPLE_SIZE 480 * 20
-#define LED_MESSAGE_NUM 8
+#define LED_MESSAGE_NUM 16
 #define SYNC_CODE_NUM 8
 #define LED_CODE_NUM 8
 #define FFH_CODE_NUM 8
 #define TONE_MAX_NUM   100
 #define SYNC_NUM_MAX 15 * 20
 
-#define MUSIC_START	0xF0	//乐谱开始标志
-#define MUSIC_END	0xFF	//乐谱结束标志
+#define MUSIC_START	0x0F0F	//乐谱开始标志
+#define MUSIC_END	0x0000	//乐谱结束标志
 
 extern uint8_t logic_buffer[SAMPLE_SIZE];
 extern int sync_index[SYNC_NUM_MAX];
@@ -45,10 +45,10 @@ void get_music() {
 		int index = sync_index[i];
 		if(led < 0 || led >= LED_NUM) continue;
 
-		uint8_t led_message = 0;
+		uint16_t led_message = 0;
 		for(int j = 0; j < LED_MESSAGE_NUM; j++) {
 			uint8_t logic = logic_buffer[j + index + SYNC_CODE_NUM + LED_CODE_NUM + FFH_CODE_NUM];
-			led_message |= (logic << (LED_MESSAGE_NUM - 1 - j));	//提取8位bit
+			led_message |= (logic << (LED_MESSAGE_NUM - 1 - j));	//提取16位bit
 		}
 
 		if(led_message == MUSIC_START) {
@@ -61,8 +61,8 @@ void get_music() {
 		else if(is_recording) {
 			if(tone_index < TONE_MAX_NUM) {
 				//提取音调和节拍信息
-				float tone = tone_frequency[ (led_message >> 4) & 0x0F ];	//高4位音调信息
-				uint8_t beat = led_message & 0x0F;		//低4位节拍信息
+				float tone = tone_frequency[ (led_message >> 8) & 0x0F ];	//高8位音调信息
+				uint8_t beat = led_message & 0x0F;		//低8位节拍信息
 				if(tone_index < TONE_MAX_NUM) {
 					tones[tone_index] = tone;
 					beats[tone_index] = beat;
@@ -80,10 +80,10 @@ void play_music() {
 		delay_time = beats[i] * 250;
 
 		tone = (uint32_t)84*1000*1000 / tones[i];
-		//TIM4->ARR = tone;	//改变频率
-		__HAL_TIM_SET_AUTORELOAD(&htim4, tone);
-//		TIM4->CCR1 = tone / 2;	//占空比为50%
-		__HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_1, tone / 2);
+		TIM4->ARR = tone;	//改变频率
+//		__HAL_TIM_SET_AUTORELOAD(&htim4, tone);
+		TIM4->CCR1 = tone / 2;	//占空比为50%
+//		__HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_1, tone / 2);
 		HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
 		HAL_Delay(delay_time);	//节拍延时
 		HAL_TIM_PWM_Stop(&htim4, TIM_CHANNEL_1);
