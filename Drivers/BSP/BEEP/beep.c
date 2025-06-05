@@ -77,9 +77,9 @@ void play_music() {
 	uint32_t i, delay_time, tone;
 
 	for(i = 0; i < tone_index; i++) {
-		delay_time = beats[i] * 250;
+		delay_time = beats[i] * 100;
 
-		tone = (uint32_t)84*1000*1000 / tones[i];
+		tone = (uint32_t)84*1000 / tones[i];
 		TIM4->ARR = tone;	//改变频率
 //		__HAL_TIM_SET_AUTORELOAD(&htim4, tone);
 		TIM4->CCR1 = tone / 2;	//占空比为50%
