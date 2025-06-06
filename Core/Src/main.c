@@ -108,10 +108,10 @@ uint8_t is_recording = 0;
 
 volatile uint8_t message_mode = 0;	//接收的led_message内容 0-矩阵按键	1-乐谱信息
 uint8_t debounce_count = 0;	//消抖用
+uint8_t get_music_done = 0;	//音乐获取完毕标志
+uint32_t beat = 0;	//节拍用
+uint8_t play_music_done = 1;
 
-//LCD
-char string_x[30];
-char string_y[30];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -169,6 +169,7 @@ int main(void)
   lcd_init();
 //  HAL_TIM_Base_Start(&htim3);
   HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1);
+  HAL_TIM_Base_Start_IT(&htim5);
 
 //  lcd_show_string(30, 90, 50, 16, 16, "1K: ", RED);
 //  lcd_show_string(30, 110, 50, 16, 16, "2K: ", RED);
@@ -203,9 +204,11 @@ int main(void)
 		  find_led();
 		  get_led_intensity();
 
-		  if(message_mode) {
+		  if(message_mode && play_music_done) {
 			  get_music();	//获取乐谱信息
-			  play_music();	//这里写的不够健壮,应该先判断是否接收到预设的完整乐谱再播放,可以先测试一下
+			  play_music_done = 0;
+			  get_music_done = 1;
+			  HAL_TIM_Base_Start_IT(&htim7);	//开始音乐定时器中断
 		  }
 		  else {
 			  get_led_message();
@@ -214,8 +217,6 @@ int main(void)
 		  get_location();	//获取PD位置
 		  HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1);
 		  HAL_GPIO_TogglePin(LED_B_GPIO_Port, LED_B_Pin);
-		  sprintf(string_x, "x: %.3f", PDlocation.x);
-		  sprintf(string_y, "y: %.3f", PDlocation.y);
 		  HAL_TIM_Base_Start_IT(&htim6);	//开始LCD定时器中断
 
 
@@ -298,14 +299,18 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	else if(htim->Instance == TIM5)
 	{
 		debounce_count++;	//每1ms自增一次
+		beat++;
 	}
-	else if(htim->Instance == TIM6)		//lcd每1000ms刷新一次内容
+	else if(htim->Instance == TIM6)		//lcd每500ms刷新一次内容
 	{
-
-
+		//LCD
+		char string_x[30];
+		char string_y[30];
 		char led0_message_str[30];
 		char led1_message_str[30];
 		char led2_message_str[30];
+		sprintf(string_x, "x: %.3f", PDlocation.x);
+		sprintf(string_y, "y: %.3f", PDlocation.y);
 		sprintf(led0_message_str, "LED0: %d", led0_message);
 		sprintf(led1_message_str, "LED1: %X", led1_message);
 		sprintf(led2_message_str, "LED2: %d", led2_message);
@@ -323,6 +328,14 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 		lcd_show_string(60, 180, 200, 32, 32, led1_message_str, DARKBLUE);
 		lcd_show_string(60, 210, 200, 32, 32, led2_message_str, DARKBLUE);
 		HAL_TIM_Base_Stop_IT(&htim6);	//关闭LCD定时器中断
+	}
+	else if(htim->Instance == TIM7)
+	{
+		if(get_music_done)
+		{
+			play_music();
+
+		}
 	}
 }
 

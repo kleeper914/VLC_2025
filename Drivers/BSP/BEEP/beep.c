@@ -30,6 +30,13 @@ extern uint8_t beats[TONE_MAX_NUM];	//节拍, 两只老虎乐谱中最短为1/4�
 extern uint8_t tone_index;
 extern uint8_t is_recording;
 
+extern uint8_t get_music_done;
+extern uint32_t beat;
+extern uint8_t play_music_done;
+
+uint32_t delay_time, tone;
+uint32_t i = 0;
+
 const float tone_frequency[14] = {
 		//低音
 		//1      2        3        4        5        6     7
@@ -74,9 +81,10 @@ void get_music() {
 }
 
 void play_music() {
-	uint32_t i, delay_time, tone;
 
-	for(i = 0; i < tone_index; i++) {
+		//beat++;
+//	for(i = 0; i < tone_index; i++) {
+		//play_music_done = 0;
 		delay_time = beats[i] * 100;
 
 		tone = (uint32_t)84*1000 / tones[i];
@@ -85,8 +93,19 @@ void play_music() {
 		TIM4->CCR1 = tone / 2;	//占空比为50%
 //		__HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_1, tone / 2);
 		HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
-		HAL_Delay(delay_time);	//节拍延时
-		HAL_TIM_PWM_Stop(&htim4, TIM_CHANNEL_1);
-		__HAL_TIM_SET_COUNTER(&htim4, 0);	//CNT寄存器清0
-	}
+//		HAL_Delay(delay_time);	//节拍延时
+
+		if(beat >= delay_time){
+			HAL_TIM_PWM_Stop(&htim4, TIM_CHANNEL_1);
+			__HAL_TIM_SET_COUNTER(&htim4, 0);	//CNT寄存器清0
+			i++;
+			beat = 0;
+			if(i == tone_index)
+			{
+				HAL_TIM_Base_Stop_IT(&htim7);
+				i = 0;
+				play_music_done = 1;
+			}
+		}
+//	}
 }
