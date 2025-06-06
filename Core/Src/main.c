@@ -108,6 +108,10 @@ uint8_t is_recording = 0;
 
 volatile uint8_t message_mode = 0;	//接收的led_message内容 0-矩阵按键	1-乐谱信息
 uint8_t debounce_count = 0;	//消抖用
+
+//LCD
+char string_x[30];
+char string_y[30];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -158,6 +162,8 @@ int main(void)
   MX_ADC2_Init();
   MX_TIM4_Init();
   MX_TIM5_Init();
+  MX_TIM6_Init();
+  MX_TIM7_Init();
   /* USER CODE BEGIN 2 */
   //HAL_TIM_Base_Start_IT(&htim6);
   lcd_init();
@@ -208,30 +214,11 @@ int main(void)
 		  get_location();	//获取PD位置
 		  HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1);
 		  HAL_GPIO_TogglePin(LED_B_GPIO_Port, LED_B_Pin);
-
-		  char string_x[30];
-		  char string_y[30];
 		  sprintf(string_x, "x: %.3f", PDlocation.x);
 		  sprintf(string_y, "y: %.3f", PDlocation.y);
-		  char led0_message_str[30];
-		  char led1_message_str[30];
-		  char led2_message_str[30];
-		  sprintf(led0_message_str, "LED0: %d", led0_message);
-		  sprintf(led1_message_str, "LED1: %X", led1_message);
-		  sprintf(led2_message_str, "LED2: %d", led2_message);
-		  lcd_clear(WHITE);
-		  lcd_show_xnum(30, 30, led0_intensity, 4, 16, 0X80, RED);
-		  lcd_show_xnum(110, 30, led1_intensity, 4, 16, 0X80, RED);
-		  lcd_show_xnum(190, 30, led2_intensity, 4, 16, 0X80, RED);
-	//		  lcd_show_xnum(30, 240, x, 4, 16, 0X00, RED);
-	//		  lcd_show_xnum(60, 240, x_small, 4, 16, 0X00, RED);
-	//		  lcd_show_xnum(30, 270, y, 4, 16, 0X00, RED);
-	//		  lcd_show_xnum(60, 270, y_small, 4, 16, 0X00, RED);
-		  lcd_show_string(60, 60, 200, 32, 32, string_x, BLUE);
-		  lcd_show_string(60, 90, 200, 32, 32, string_y, BLUE);
-		  lcd_show_string(60, 150, 200, 32, 32, led0_message_str, DARKBLUE);
-		  lcd_show_string(60, 180, 200, 32, 32, led1_message_str, DARKBLUE);
-		  lcd_show_string(60, 210, 200, 32, 32, led2_message_str, DARKBLUE);
+		  HAL_TIM_Base_Start_IT(&htim6);	//开始LCD定时器中断
+
+
 	  }
 
 
@@ -308,9 +295,34 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 //	{
 //		HAL_GPIO_TogglePin(SYNC_GPIO_Port, SYNC_Pin);
 //	}
-	if(htim->Instance == TIM5)
+	else if(htim->Instance == TIM5)
 	{
 		debounce_count++;	//每1ms自增一次
+	}
+	else if(htim->Instance == TIM6)		//lcd每1000ms刷新一次内容
+	{
+
+
+		char led0_message_str[30];
+		char led1_message_str[30];
+		char led2_message_str[30];
+		sprintf(led0_message_str, "LED0: %d", led0_message);
+		sprintf(led1_message_str, "LED1: %X", led1_message);
+		sprintf(led2_message_str, "LED2: %d", led2_message);
+		lcd_clear(WHITE);
+		lcd_show_xnum(30, 30, led0_intensity, 4, 16, 0X80, RED);
+		lcd_show_xnum(110, 30, led1_intensity, 4, 16, 0X80, RED);
+		lcd_show_xnum(190, 30, led2_intensity, 4, 16, 0X80, RED);
+		// lcd_show_xnum(30, 240, x, 4, 16, 0X00, RED);
+		// lcd_show_xnum(60, 240, x_small, 4, 16, 0X00, RED);
+		// lcd_show_xnum(30, 270, y, 4, 16, 0X00, RED);
+		// lcd_show_xnum(60, 270, y_small, 4, 16, 0X00, RED);
+		lcd_show_string(60, 60, 200, 32, 32, string_x, BLUE);
+		lcd_show_string(60, 90, 200, 32, 32, string_y, BLUE);
+		lcd_show_string(60, 150, 200, 32, 32, led0_message_str, DARKBLUE);
+		lcd_show_string(60, 180, 200, 32, 32, led1_message_str, DARKBLUE);
+		lcd_show_string(60, 210, 200, 32, 32, led2_message_str, DARKBLUE);
+		HAL_TIM_Base_Stop_IT(&htim6);	//关闭LCD定时器中断
 	}
 }
 
